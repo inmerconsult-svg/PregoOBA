@@ -1,0 +1,40 @@
+{
+  "url": "http://127.0.0.1:8081/",
+  "viewports": {
+    "desktop": {
+      "width": 1280,
+      "height": 800,
+      "status": 200,
+      "title": "Prego B2B",
+      "hasCanvas": false,
+      "bodyTextLen": 838,
+      "bodyTextHash": "3bae297a13846d21d3b505d2af7168c7bda178d5837d4acd1520397442aed050",
+      "bodyTextPrefix": "B2B-TILAUSPORTAALI Tuotteet FI EN SV NO ET KEITTIÖ · KOTI · KAUN",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-built.png"
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844,
+      "status": 200,
+      "title": "Prego B2B",
+      "hasCanvas": false,
+      "bodyTextLen": 810,
+      "bodyTextHash": "32500445bc71ad45d72736b2946cc6ab58fd8502e43d3c6c7690e9ed53be83a5",
+      "bodyTextPrefix": "FI EN SV NO ET KEITTIÖ · KOTI · KAUNEUS · HYVINVOINTI · LÄÄKINTÄ",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-built-mobile.png"
+    }
+  },
+  "brandWarnings": [],
+  "authWarnings": [],
+  "verdictFile": "/workspace/screenshots/app-builder-built.json",
+  "divergesFromBaseline": true,
+  "baselineReasons": [
+    "desktop: body text replaced (similar length, page start changed)"
+  ]
+}

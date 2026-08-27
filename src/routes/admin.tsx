@@ -1,0 +1,547 @@
+import { createFileRoute } from "@tanstack/react-router";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
+import { Shell } from "@/components/shell";
+import { Button, Field, Input, Textarea } from "@/components/ui";
+import { GROUPS } from "@/lib/catalog-helpers";
+import { useCurrentUserState } from "@/lib/auth/use-current-user";
+import {
+  adminListProducts,
+  deleteProduct,
+  importInventory,
+  listImportLogs,
+  upsertProduct,
+} from "@/lib/server/catalog";
+import {
+  adminListOrders,
+  adminOverview,
+  ensureProfile,
+  listCustomers,
+  saveSettings,
+  setCustomerRole,
+  setOrderStatus,
+  getSettings,
+} from "@/lib/server/commerce";
+import { formatEur } from "@/lib/utils";
+import { useI18n } from "@/lib/i18n";
+import type { Product, Profile } from "@/lib/types";
+
+export const Route = createFileRoute("/admin")({ component: AdminPage });
+
+type Tab = "overview" | "products" | "import" | "orders" | "customers" | "settings";
+
+function AdminPage() {
+  const { user, isPending } = useCurrentUserState();
+  const { t, lang } = useI18n();
+  const [tab, setTab] = useState<Tab>("overview");
+  const [role, setRole] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!user) return;
+    void ensureProfile({ data: { email: user.primaryEmail, displayName: user.displayName, language: lang } })
+      .then((p: Profile) => setRole(p.role))
+      .catch(() => setRole(null));
+  }, [user, lang]);
+
+  if (isPending) {
+    return (
+      <Shell>
+        <p className="p-10 text-sm text-muted">{t("common.loading")}</p>
+      </Shell>
+    );
+  }
+  if (!user) return <RedirectToSignIn />;
+  if (role && role !== "admin") {
+    return (
+      <Shell>
+        <p className="p-10 text-sm text-muted">Forbidden</p>
+      </Shell>
+    );
+  }
+
+  const tabs: { id: Tab; label: string }[] = [
+    { id: "overview", label: t("admin.overview") },
+    { id: "products", label: t("admin.products") },
+    { id: "import", label: t("admin.import") },
+    { id: "orders", label: t("admin.orders") },
+    { id: "customers", label: t("admin.customers") },
+    { id: "settings", label: t("admin.settings") },
+  ];
+
+  return (
+    <Shell>
+      <div className="mx-auto max-w-6xl px-4 py-10">
+        <h1 className="text-3xl font-medium tracking-tight">{t("admin.title")}</h1>
+        <div className="mt-6 flex flex-wrap gap-2">
+          {tabs.map((tb) => (
+            <button
+              key={tb.id}
+              type="button"
+              onClick={() => setTab(tb.id)}
+              className={`rounded-full border px-3 py-1.5 text-sm ${tab === tb.id ? "border-ink bg-ink text-paper" : "border-line bg-surface"}`}
+            >
+              {tb.label}
+            </button>
+          ))}
+        </div>
+        <div className="mt-8">
+          {tab === "overview" && <Overview />}
+          {tab === "products" && <ProductsAdmin />}
+          {tab === "import" && <ImportAdmin />}
+          {tab === "orders" && <OrdersAdmin />}
+          {tab === "customers" && <CustomersAdmin />}
+          {tab === "settings" && <SettingsAdmin />}
+        </div>
+      </div>
+    </Shell>
+  );
+}
+
+function Overview() {
+  const { t } = useI18n();
+  const q = useQuery({ queryKey: ["admin-overview"], queryFn: () => adminOverview() });
+  const d = q.data;
+  if (!d) return <p className="text-sm text-muted">{t("common.loading")}</p>;
+  const cards = [
+    { label: t("admin.products"), value: d.products },
+    { label: t("admin.orders"), value: d.orders },
+    { label: t("orders.status.submitted"), value: d.open },
+    { label: t("admin.customers"), value: d.customers },
+    { label: t("stock.low"), value: d.low },
+    { label: t("stock.out"), value: d.out },
+  ];
+  return (
+    <div>
+      <div className="grid gap-3 sm:grid-cols-3">
+        {cards.map((c) => (
+          <div key={c.label} className="rounded-xl border border-line bg-surface p-5">
+            <p className="text-xs uppercase tracking-wider text-muted">{c.label}</p>
+            <p className="mt-2 text-3xl font-medium tabular-nums">{c.value}</p>
+          </div>
+        ))}
+      </div>
+      <h2 className="mt-10 text-lg font-medium">Email</h2>
+      <ul className="mt-3 divide-y divide-line rounded-xl border border-line bg-surface text-sm">
+        {d.emails.map((e) => (
+          <li key={e.id} className="px-4 py-3">
+            <p className="font-medium">{e.subject}</p>
+            <p className="text-xs text-muted">
+              {e.to_address} · {String(e.created_at).slice(0, 16)}
+            </p>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function emptyProduct(): Product {
+  return {
+    sku: "",
+    ean: "",
+    nameFi: "",
+    nameEn: "",
+    nameSv: "",
+    nameNo: "",
+    nameEt: "",
+    categoryCode: "100",
+    categoryFi: "",
+    categoryEn: "",
+    categorySv: "",
+    categoryNo: "",
+    categoryEt: "",
+    group: "coffee",
+    netPrice: 0,
+    cartonQty: 1,
+    stock: 0,
+    incoming: 0,
+    reserved: 0,
+    backorder: 0,
+    eta: null,
+    active: true,
+    imageUrl: null,
+    datasheetUrl: null,
+    featuresFi: [],
+    featuresEn: [],
+    featuresSv: [],
+    featuresNo: [],
+    featuresEt: [],
+  };
+}
+
+function ProductsAdmin() {
+  const { t } = useI18n();
+  const qc = useQueryClient();
+  const q = useQuery({ queryKey: ["admin-products"], queryFn: () => adminListProducts() });
+  const [term, setTerm] = useState("");
+  const [edit, setEdit] = useState<Product | null>(null);
+  const products = q.data ?? [];
+  const filtered = useMemo(() => {
+    const n = term.trim().toLowerCase();
+    if (!n) return products;
+    return products.filter((p) =>
+      `${p.sku} ${p.nameFi} ${p.ean ?? ""} ${(p.featuresFi ?? []).join(" ")}`.toLowerCase().includes(n),
+    );
+  }, [products, term]);
+
+  const save = useMutation({
+    mutationFn: (p: Product) => upsertProduct({ data: p }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["admin-products"] });
+      void qc.invalidateQueries({ queryKey: ["products"] });
+      setEdit(null);
+      toast.message(t("account.saved"));
+    },
+  });
+  const del = useMutation({
+    mutationFn: (sku: string) => deleteProduct({ data: sku }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["admin-products"] });
+      void qc.invalidateQueries({ queryKey: ["products"] });
+    },
+  });
+
+  return (
+    <div>
+      <div className="flex flex-wrap gap-3">
+        <Input className="max-w-sm" placeholder={t("catalog.search")} value={term} onChange={(e) => setTerm(e.target.value)} />
+        <Button type="button" onClick={() => setEdit(emptyProduct())}>
+          {t("admin.addProduct")}
+        </Button>
+      </div>
+      {edit ? (
+        <form
+          className="mt-6 grid gap-3 rounded-xl border border-line bg-surface p-5 sm:grid-cols-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!edit.sku) return;
+            save.mutate(edit);
+          }}
+        >
+          <Field label={t("product.sku")}>
+            <Input value={edit.sku} onChange={(e) => setEdit({ ...edit, sku: e.target.value })} required />
+          </Field>
+          <Field label={t("product.ean")}>
+            <Input value={edit.ean ?? ""} onChange={(e) => setEdit({ ...edit, ean: e.target.value })} />
+          </Field>
+          <Field label="FI">
+            <Input value={edit.nameFi} onChange={(e) => setEdit({ ...edit, nameFi: e.target.value })} required />
+          </Field>
+          <Field label="EN">
+            <Input value={edit.nameEn} onChange={(e) => setEdit({ ...edit, nameEn: e.target.value })} />
+          </Field>
+          <Field label={t("product.net")}>
+            <Input
+              type="number"
+              step="0.01"
+              value={edit.netPrice}
+              onChange={(e) => setEdit({ ...edit, netPrice: Number(e.target.value) })}
+            />
+          </Field>
+          <Field label={t("product.carton")}>
+            <Input
+              type="number"
+              value={edit.cartonQty}
+              onChange={(e) => setEdit({ ...edit, cartonQty: Number(e.target.value) })}
+            />
+          </Field>
+          <Field label="Stock">
+            <Input type="number" value={edit.stock} onChange={(e) => setEdit({ ...edit, stock: Number(e.target.value) })} />
+          </Field>
+          <Field label="Incoming">
+            <Input
+              type="number"
+              value={edit.incoming}
+              onChange={(e) => setEdit({ ...edit, incoming: Number(e.target.value) })}
+            />
+          </Field>
+          <Field label={t("admin.group")}>
+            <select
+              className="h-10 w-full rounded-md border border-line bg-surface px-3 text-sm"
+              value={edit.group}
+              onChange={(e) => setEdit({ ...edit, group: e.target.value })}
+            >
+              {GROUPS.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {t(`groups.${g.id}`)}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Category">
+            <Input
+              value={edit.categoryFi}
+              onChange={(e) => setEdit({ ...edit, categoryFi: e.target.value, categoryEn: e.target.value })}
+            />
+          </Field>
+          <Field label={t("product.image")}>
+            <Input
+              value={edit.imageUrl ?? ""}
+              onChange={(e) => setEdit({ ...edit, imageUrl: e.target.value || null })}
+              placeholder="/images/products/SKU.jpg"
+            />
+          </Field>
+          <Field label={t("product.datasheet")}>
+            <Input
+              value={edit.datasheetUrl ?? ""}
+              onChange={(e) => setEdit({ ...edit, datasheetUrl: e.target.value || null })}
+              placeholder="/datasheets/SKU.pdf"
+            />
+          </Field>
+          <div className="sm:col-span-2">
+            <Field label={`${t("product.features")} (FI)`}>
+              <Textarea
+                value={(edit.featuresFi ?? []).join("\n")}
+                onChange={(e) =>
+                  setEdit({
+                    ...edit,
+                    featuresFi: e.target.value
+                      .split("\n")
+                      .map((s) => s.trim())
+                      .filter(Boolean),
+                  })
+                }
+              />
+            </Field>
+          </div>
+          <div className="flex items-center gap-3 sm:col-span-2">
+            <Button type="submit" disabled={save.isPending}>
+              {t("admin.save")}
+            </Button>
+            <Button type="button" variant="secondary" onClick={() => setEdit(null)}>
+              {t("common.cancel")}
+            </Button>
+          </div>
+        </form>
+      ) : null}
+      <div className="mt-6 overflow-x-auto rounded-xl border border-line bg-surface">
+        <table className="w-full min-w-2xl text-sm">
+          <thead className="text-left text-xs uppercase tracking-wider text-muted">
+            <tr>
+              <th className="px-3 py-2">SKU</th>
+              <th className="px-3 py-2">FI</th>
+              <th className="px-3 py-2">{t("product.net")}</th>
+              <th className="px-3 py-2">Stock</th>
+              <th className="px-3 py-2" />
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((p) => (
+              <tr key={p.sku} className="border-t border-line">
+                <td className="px-3 py-2 font-mono text-xs">{p.sku}</td>
+                <td className="px-3 py-2">{p.nameFi}</td>
+                <td className="px-3 py-2 tabular-nums">{p.netPrice.toFixed(2)}</td>
+                <td className="px-3 py-2 tabular-nums">{p.stock}</td>
+                <td className="px-3 py-2 text-right">
+                  <button type="button" className="mr-3 text-xs underline" onClick={() => setEdit(p)}>
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    className="text-xs text-accent underline"
+                    onClick={() => {
+                      if (confirm(p.sku)) del.mutate(p.sku);
+                    }}
+                  >
+                    {t("admin.remove")}
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function ImportAdmin() {
+  const { t } = useI18n();
+  const qc = useQueryClient();
+  const logs = useQuery({ queryKey: ["import-logs"], queryFn: () => listImportLogs() });
+  const [deactivate, setDeactivate] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  async function onFile(file: File) {
+    setBusy(true);
+    try {
+      const text = await file.text();
+      const res = await importInventory({
+        data: { filename: file.name, text, deactivateMissing: deactivate },
+      });
+      toast.message(t("admin.imported", { u: res.updated, a: res.added }));
+      void qc.invalidateQueries({ queryKey: ["admin-products"] });
+      void qc.invalidateQueries({ queryKey: ["products"] });
+      void qc.invalidateQueries({ queryKey: ["import-logs"] });
+    } catch (err) {
+      toast.message(err instanceof Error ? err.message : t("auth.error"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div>
+      <p className="max-w-2xl text-sm text-muted">{t("admin.importLead")}</p>
+      <a href="/prego-stock-template.xls" className="mt-3 inline-block text-sm underline" download>
+        {t("admin.template")}
+      </a>
+      <label className="mt-6 flex min-h-40 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-line bg-surface px-4 text-sm text-muted">
+        {busy ? t("common.loading") : t("admin.drop")}
+        <input
+          type="file"
+          accept=".xls,.xlsx,.csv,.xml,text/xml,application/xml,text/csv"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) void onFile(f);
+          }}
+        />
+      </label>
+      <label className="mt-4 flex items-center gap-2 text-sm">
+        <input type="checkbox" checked={deactivate} onChange={(e) => setDeactivate(e.target.checked)} />
+        {t("admin.deactivateMissing")}
+      </label>
+      <ul className="mt-8 divide-y divide-line rounded-xl border border-line bg-surface text-sm">
+        {(logs.data ?? []).map((l) => (
+          <li key={l.id} className="px-4 py-3">
+            {l.filename} · +{l.products_added} / ~{l.products_updated} · {String(l.created_at).slice(0, 16)}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function OrdersAdmin() {
+  const { t, lang } = useI18n();
+  const qc = useQueryClient();
+  const q = useQuery({ queryKey: ["admin-orders"], queryFn: () => adminListOrders() });
+  const orders = q.data ?? [];
+  const statuses = ["submitted", "confirmed", "processing", "shipped", "cancelled"] as const;
+  return (
+    <div className="overflow-x-auto rounded-xl border border-line bg-surface">
+      <table className="w-full min-w-2xl text-sm">
+        <thead className="text-left text-xs uppercase tracking-wider text-muted">
+          <tr>
+            <th className="px-3 py-2">No</th>
+            <th className="px-3 py-2">{t("account.company")}</th>
+            <th className="px-3 py-2">{t("checkout.total")}</th>
+            <th className="px-3 py-2">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {orders.map((o) => (
+            <tr key={o.id} className="border-t border-line">
+              <td className="px-3 py-2 font-medium">{o.orderNo}</td>
+              <td className="px-3 py-2">
+                {o.companyName}
+                <span className="block text-xs text-muted">{o.email}</span>
+              </td>
+              <td className="px-3 py-2 tabular-nums">{formatEur(o.grandTotal, lang)}</td>
+              <td className="px-3 py-2">
+                <select
+                  className="h-9 rounded-md border border-line bg-surface px-2 text-sm"
+                  value={o.status}
+                  onChange={(e) => {
+                    void setOrderStatus({ data: { id: o.id, status: e.target.value } }).then(() =>
+                      qc.invalidateQueries({ queryKey: ["admin-orders"] }),
+                    );
+                  }}
+                >
+                  {statuses.map((s) => (
+                    <option key={s} value={s}>
+                      {t(`orders.status.${s}`)}
+                    </option>
+                  ))}
+                </select>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function CustomersAdmin() {
+  const { t } = useI18n();
+  const qc = useQueryClient();
+  const q = useQuery({ queryKey: ["admin-customers"], queryFn: () => listCustomers() });
+  const customers = q.data ?? [];
+  return (
+    <div className="overflow-x-auto rounded-xl border border-line bg-surface">
+      <table className="w-full min-w-2xl text-sm">
+        <thead className="text-left text-xs uppercase tracking-wider text-muted">
+          <tr>
+            <th className="px-3 py-2">{t("auth.email")}</th>
+            <th className="px-3 py-2">{t("account.company")}</th>
+            <th className="px-3 py-2">Role</th>
+          </tr>
+        </thead>
+        <tbody>
+          {customers.map((c) => (
+            <tr key={c.userId} className="border-t border-line">
+              <td className="px-3 py-2">
+                {c.email}
+                <span className="block text-xs text-muted">{c.displayName}</span>
+              </td>
+              <td className="px-3 py-2">{c.companyName}</td>
+              <td className="px-3 py-2">
+                <select
+                  className="h-9 rounded-md border border-line bg-surface px-2 text-sm"
+                  value={c.role}
+                  onChange={(e) => {
+                    void setCustomerRole({
+                      data: { userId: c.userId, role: e.target.value as Profile["role"] },
+                    }).then(() => qc.invalidateQueries({ queryKey: ["admin-customers"] }));
+                  }}
+                >
+                  <option value="pending">{t("admin.role.pending")}</option>
+                  <option value="customer">{t("admin.role.customer")}</option>
+                  <option value="admin">{t("admin.role.admin")}</option>
+                </select>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function SettingsAdmin() {
+  const { t } = useI18n();
+  const q = useQuery({ queryKey: ["settings"], queryFn: () => getSettings() });
+  const [form, setForm] = useState({ orderEmail: "", vatRate: "25.5", companyName: "" });
+  useEffect(() => {
+    if (!q.data) return;
+    setForm({
+      orderEmail: q.data.order_email ?? "",
+      vatRate: q.data.vat_rate ?? "25.5",
+      companyName: q.data.company_name ?? "",
+    });
+  }, [q.data]);
+  return (
+    <form
+      className="max-w-lg space-y-4"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void saveSettings({ data: form }).then(() => toast.message(t("account.saved")));
+      }}
+    >
+      <Field label={t("admin.orderEmail")}>
+        <Input type="email" value={form.orderEmail} onChange={(e) => setForm({ ...form, orderEmail: e.target.value })} />
+        <p className="mt-1 text-xs text-muted">{t("admin.emailHint")}</p>
+      </Field>
+      <Field label={t("admin.vatRate")}>
+        <Input value={form.vatRate} onChange={(e) => setForm({ ...form, vatRate: e.target.value })} />
+      </Field>
+      <Field label={t("account.company")}>
+        <Input value={form.companyName} onChange={(e) => setForm({ ...form, companyName: e.target.value })} />
+      </Field>
+      <Button type="submit">{t("admin.save")}</Button>
+    </form>
+  );
+}
