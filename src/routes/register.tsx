@@ -57,7 +57,7 @@ function Register() {
       /* profile can be completed later */
     }
     setBusy(false);
-    void nav({ to: "/catalog" });
+    void nav({ to: "/pending" });
   }
 
   return (

@@ -3,6 +3,7 @@ import { getSql } from "@/lib/db";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { mapProductRow } from "@/lib/catalog-helpers";
 import type { Order, OrderItem, Profile } from "@/lib/types";
+import { MIN_ORDER_NET, meetsMinOrder } from "@/lib/commerce-rules";
 
 function mapProfile(row: Record<string, unknown>): Profile {
   return {
@@ -55,12 +56,13 @@ export const ensureProfile = createServerFn({ method: "POST" })
     }
     const admins = await sql<{ n: number }>`select count(*)::int as n from profiles where role = 'admin'`;
     const isFirst = (admins[0]?.n ?? 0) === 0;
-    const role = isFirst ? "admin" : "customer";
+    const role = isFirst ? "admin" : "pending";
     const email = data.email ?? "";
     const name = data.displayName ?? "";
+    const approvedAt = isFirst ? new Date().toISOString() : null;
     await sql`
       insert into profiles (user_id, email, display_name, role, language, approved_at)
-      values (${context.userId}, ${email}, ${name}, ${role}, ${data.language ?? "fi"}, now())
+      values (${context.userId}, ${email}, ${name}, ${role}, ${data.language ?? "fi"}, ${approvedAt})
     `;
     const created = await sql<Record<string, unknown>>`select * from profiles where user_id = ${context.userId}`;
     return mapProfile(created[0]);
@@ -118,7 +120,12 @@ export const setCustomerRole = createServerFn({ method: "POST" })
       throw new Error("Cannot demote yourself");
     }
     const sql = await getSql();
-    await sql`update profiles set role = ${data.role} where user_id = ${data.userId}`;
+    await sql`
+      update profiles set
+        role = ${data.role},
+        approved_at = case when ${data.role} = 'pending' then null else coalesce(approved_at, now()) end
+      where user_id = ${data.userId}
+    `;
     return { ok: true };
   });
 
@@ -166,6 +173,9 @@ export const submitOrder = createServerFn({ method: "POST" })
     const orderEmailRows = await sql<{ value: string }>`select value from settings where key = 'order_email'`;
     const vatRate = data.reverseCharge ? 0 : num(vatRows[0]?.value ?? 25.5);
     const netTotal = items.reduce((s, i) => s + i.qty * i.product.netPrice, 0);
+    if (!meetsMinOrder(netTotal)) {
+      throw new Error(`Minimitilaus ${MIN_ORDER_NET} € (alv 0)`);
+    }
     const vatTotal = Math.round(netTotal * (vatRate / 100) * 100) / 100;
     const grand = Math.round((netTotal + vatTotal) * 100) / 100;
 

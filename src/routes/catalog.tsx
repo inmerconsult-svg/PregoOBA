@@ -9,8 +9,7 @@ import { GROUPS, productName, productFeatures } from "@/lib/catalog-helpers";
 import { useI18n } from "@/lib/i18n";
 import { useCart } from "@/store/cart";
 import { roundToCarton } from "@/lib/utils";
-import { SignedIn } from "@/lib/auth/gates";
-import { useCurrentUserState } from "@/lib/auth/use-current-user";
+import { useMyProfile } from "@/lib/auth/use-profile";
 
 type Search = { group?: string; q?: string };
 
@@ -24,7 +23,7 @@ export const Route = createFileRoute("/catalog")({
 
 function Catalog() {
   const { t, lang } = useI18n();
-  const { user } = useCurrentUserState();
+  const { isApproved } = useMyProfile();
   const search = Route.useSearch();
   const add = useCart((s) => s.add);
   const [q, setQ] = useState(search.q ?? "");
@@ -48,12 +47,12 @@ function Catalog() {
     const copy = [...list];
     copy.sort((a, b) => {
       if (sort === "sku") return a.sku.localeCompare(b.sku);
-      if (sort === "price" && user) return a.netPrice - b.netPrice;
+      if (sort === "price" && isApproved) return a.netPrice - b.netPrice;
       if (sort === "stock") return b.stock - a.stock;
       return productName(a, lang).localeCompare(productName(b, lang), lang);
     });
     return copy;
-  }, [products, q, search.group, sort, lang, user]);
+  }, [products, q, search.group, sort, lang, isApproved]);
 
   function addQuick() {
     const lines = quick.split(/\n+/).map((l) => l.trim()).filter(Boolean);
@@ -113,12 +112,12 @@ function Catalog() {
           >
             <option value="name">{t("catalog.sortName")}</option>
             <option value="sku">{t("catalog.sortSku")}</option>
-            {user ? <option value="price">{t("catalog.sortPrice")}</option> : null}
+            {isApproved ? <option value="price">{t("catalog.sortPrice")}</option> : null}
             <option value="stock">{t("catalog.sortStock")}</option>
           </select>
         </div>
 
-        <SignedIn>
+        {isApproved ? (
           <details className="mt-6 rounded-xl border border-line bg-surface p-4">
             <summary className="cursor-pointer text-sm font-medium">{t("catalog.quick")}</summary>
             <p className="mt-2 text-xs text-muted">{t("catalog.quickHint")}</p>
@@ -130,7 +129,7 @@ function Catalog() {
               {quickMsg ? <span className="text-sm text-muted">{quickMsg}</span> : null}
             </div>
           </details>
-        </SignedIn>
+        ) : null}
 
         {productsQ.isPending ? (
           <p className="mt-10 text-sm text-muted">{t("common.loading")}</p>

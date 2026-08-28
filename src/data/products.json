@@ -5308,7 +5308,7 @@
     "incoming": 0,
     "reserved": 0,
     "backorder": 0,
-    "eta": "30.9",
+    "eta": null,
     "active": true,
     "imageUrl": null,
     "datasheetUrl": null,

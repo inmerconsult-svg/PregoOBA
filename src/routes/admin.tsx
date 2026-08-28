@@ -469,7 +469,11 @@ function CustomersAdmin() {
   const { t } = useI18n();
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ["admin-customers"], queryFn: () => listCustomers() });
-  const customers = q.data ?? [];
+  const customers = [...(q.data ?? [])].sort((a, b) => {
+    if (a.role === "pending" && b.role !== "pending") return -1;
+    if (a.role !== "pending" && b.role === "pending") return 1;
+    return 0;
+  });
   return (
     <div className="overflow-x-auto rounded-xl border border-line bg-surface">
       <table className="w-full min-w-2xl text-sm">
@@ -489,19 +493,34 @@ function CustomersAdmin() {
               </td>
               <td className="px-3 py-2">{c.companyName}</td>
               <td className="px-3 py-2">
-                <select
-                  className="h-9 rounded-md border border-line bg-surface px-2 text-sm"
-                  value={c.role}
-                  onChange={(e) => {
-                    void setCustomerRole({
-                      data: { userId: c.userId, role: e.target.value as Profile["role"] },
-                    }).then(() => qc.invalidateQueries({ queryKey: ["admin-customers"] }));
-                  }}
-                >
-                  <option value="pending">{t("admin.role.pending")}</option>
-                  <option value="customer">{t("admin.role.customer")}</option>
-                  <option value="admin">{t("admin.role.admin")}</option>
-                </select>
+                <div className="flex items-center gap-2">
+                  <select
+                    className="h-9 rounded-md border border-line bg-surface px-2 text-sm"
+                    value={c.role}
+                    onChange={(e) => {
+                      void setCustomerRole({
+                        data: { userId: c.userId, role: e.target.value as Profile["role"] },
+                      }).then(() => qc.invalidateQueries({ queryKey: ["admin-customers"] }));
+                    }}
+                  >
+                    <option value="pending">{t("admin.role.pending")}</option>
+                    <option value="customer">{t("admin.role.customer")}</option>
+                    <option value="admin">{t("admin.role.admin")}</option>
+                  </select>
+                  {c.role === "pending" ? (
+                    <button
+                      type="button"
+                      className="h-9 rounded-md bg-ink px-3 text-xs font-medium text-paper"
+                      onClick={() => {
+                        void setCustomerRole({
+                          data: { userId: c.userId, role: "customer" },
+                        }).then(() => qc.invalidateQueries({ queryKey: ["admin-customers"] }));
+                      }}
+                    >
+                      {t("admin.approve")}
+                    </button>
+                  ) : null}
+                </div>
               </td>
             </tr>
           ))}

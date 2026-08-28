@@ -6,18 +6,22 @@ import { Shell } from "@/components/shell";
 import { Button, Field, Input, Textarea } from "@/components/ui";
 import { RedirectToSignIn } from "@/lib/auth/gates";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
+import { useMyProfile } from "@/lib/auth/use-profile";
+import { PendingNotice } from "./pending";
 import { listProducts } from "@/lib/server/catalog";
 import { ensureProfile, submitOrder, updateProfile } from "@/lib/server/commerce";
 import { productName } from "@/lib/catalog-helpers";
 import { formatEur } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
 import { useCart } from "@/store/cart";
+import { MIN_ORDER_NET, meetsMinOrder } from "@/lib/commerce-rules";
 import type { Profile } from "@/lib/types";
 
 export const Route = createFileRoute("/checkout")({ component: CheckoutPage });
 
 function CheckoutPage() {
   const { user, isPending } = useCurrentUserState();
+  const { isAwaiting } = useMyProfile();
   const { t, lang } = useI18n();
   const nav = useNavigate();
   const lines = useCart((s) => s.lines);
@@ -38,11 +42,15 @@ function CheckoutPage() {
     deliveryCity: "",
     deliveryCountry: "FI",
   });
+  const [formReady, setFormReady] = useState(false);
+  const userId = user?.id;
 
   useEffect(() => {
-    if (!user) return;
-    void ensureProfile({ data: { email: user.primaryEmail, displayName: user.displayName, language: lang } }).then(
+    if (!userId || formReady) return;
+    let cancelled = false;
+    void ensureProfile({ data: { email: user?.primaryEmail, displayName: user?.displayName, language: lang } }).then(
       (p) => {
+        if (cancelled) return;
         setProfile(p);
         setForm({
           companyName: p.companyName,
@@ -54,9 +62,13 @@ function CheckoutPage() {
           deliveryCity: p.city,
           deliveryCountry: p.country || "FI",
         });
+        setFormReady(true);
       },
     );
-  }, [user, lang]);
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, formReady, lang, user?.primaryEmail, user?.displayName]);
 
   if (isPending) {
     return (
@@ -66,6 +78,13 @@ function CheckoutPage() {
     );
   }
   if (!user) return <RedirectToSignIn />;
+  if (isAwaiting) {
+    return (
+      <Shell>
+        <PendingNotice />
+      </Shell>
+    );
+  }
 
   const products = productsQ.data ?? [];
   const rows = lines
@@ -82,6 +101,10 @@ function CheckoutPage() {
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!rows.length) return;
+    if (!meetsMinOrder(net)) {
+      toast.message(t("checkout.minOrder", { n: MIN_ORDER_NET }));
+      return;
+    }
     setBusy(true);
     try {
       await updateProfile({
@@ -206,7 +229,10 @@ function CheckoutPage() {
                 <dd className="tabular-nums">{formatEur(grand, lang)}</dd>
               </div>
             </dl>
-            <Button type="submit" className="mt-6 w-full" disabled={busy || rows.length === 0}>
+            {!meetsMinOrder(net) ? (
+              <p className="mt-4 text-sm text-accent">{t("checkout.minOrder", { n: MIN_ORDER_NET })}</p>
+            ) : null}
+            <Button type="submit" className="mt-6 w-full" disabled={busy || rows.length === 0 || !meetsMinOrder(net)}>
               {t("checkout.submit")}
             </Button>
           </div>

@@ -3,6 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { Shell } from "@/components/shell";
 import { RedirectToSignIn } from "@/lib/auth/gates";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
+import { useMyProfile } from "@/lib/auth/use-profile";
+import { PendingNotice } from "./pending";
 import { listMyOrders } from "@/lib/server/commerce";
 import { formatEur } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
@@ -11,6 +13,7 @@ export const Route = createFileRoute("/orders")({ component: OrdersPage });
 
 function OrdersPage() {
   const { user, isPending } = useCurrentUserState();
+  const { isAwaiting } = useMyProfile();
   const { t, lang } = useI18n();
   const ordersQ = useQuery({
     queryKey: ["my-orders", user?.id],
@@ -25,6 +28,13 @@ function OrdersPage() {
     );
   }
   if (!user) return <RedirectToSignIn />;
+  if (isAwaiting) {
+    return (
+      <Shell>
+        <PendingNotice />
+      </Shell>
+    );
+  }
   const orders = ordersQ.data ?? [];
   return (
     <Shell>

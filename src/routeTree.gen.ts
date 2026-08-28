@@ -18,6 +18,7 @@ import { Route as CheckoutRouteImport } from './routes/checkout'
 import { Route as ContactRouteImport } from './routes/contact'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as OrdersRouteImport } from './routes/orders'
+import { Route as PendingRouteImport } from './routes/pending'
 import { Route as RegisterRouteImport } from './routes/register'
 import { Route as OrdersIdRouteImport } from './routes/orders.$id'
 import { Route as ProductSkuRouteImport } from './routes/product.$sku'
@@ -68,6 +69,11 @@ const OrdersRoute = OrdersRouteImport.update({
   path: '/orders',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PendingRoute = PendingRouteImport.update({
+  id: '/pending',
+  path: '/pending',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const RegisterRoute = RegisterRouteImport.update({
   id: '/register',
   path: '/register',
@@ -99,6 +105,7 @@ export interface FileRoutesByFullPath {
   '/contact': typeof ContactRoute
   '/login': typeof LoginRoute
   '/orders': typeof OrdersRouteWithChildren
+  '/pending': typeof PendingRoute
   '/register': typeof RegisterRoute
   '/orders/$id': typeof OrdersIdRoute
   '/product/$sku': typeof ProductSkuRoute
@@ -114,6 +121,7 @@ export interface FileRoutesByTo {
   '/contact': typeof ContactRoute
   '/login': typeof LoginRoute
   '/orders': typeof OrdersRouteWithChildren
+  '/pending': typeof PendingRoute
   '/register': typeof RegisterRoute
   '/orders/$id': typeof OrdersIdRoute
   '/product/$sku': typeof ProductSkuRoute
@@ -130,6 +138,7 @@ export interface FileRoutesById {
   '/contact': typeof ContactRoute
   '/login': typeof LoginRoute
   '/orders': typeof OrdersRouteWithChildren
+  '/pending': typeof PendingRoute
   '/register': typeof RegisterRoute
   '/orders/$id': typeof OrdersIdRoute
   '/product/$sku': typeof ProductSkuRoute
@@ -147,6 +156,7 @@ export interface FileRouteTypes {
     | '/contact'
     | '/login'
     | '/orders'
+    | '/pending'
     | '/register'
     | '/orders/$id'
     | '/product/$sku'
@@ -162,6 +172,7 @@ export interface FileRouteTypes {
     | '/contact'
     | '/login'
     | '/orders'
+    | '/pending'
     | '/register'
     | '/orders/$id'
     | '/product/$sku'
@@ -177,6 +188,7 @@ export interface FileRouteTypes {
     | '/contact'
     | '/login'
     | '/orders'
+    | '/pending'
     | '/register'
     | '/orders/$id'
     | '/product/$sku'
@@ -193,6 +205,7 @@ export interface RootRouteChildren {
   ContactRoute: typeof ContactRoute
   LoginRoute: typeof LoginRoute
   OrdersRoute: typeof OrdersRouteWithChildren
+  PendingRoute: typeof PendingRoute
   RegisterRoute: typeof RegisterRoute
   ProductSkuRoute: typeof ProductSkuRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
@@ -263,6 +276,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OrdersRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/pending': {
+      id: '/pending'
+      path: '/pending'
+      fullPath: '/pending'
+      preLoaderRoute: typeof PendingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/register': {
       id: '/register'
       path: '/register'
@@ -315,6 +335,7 @@ const rootRouteChildren: RootRouteChildren = {
   ContactRoute: ContactRoute,
   LoginRoute: LoginRoute,
   OrdersRoute: OrdersRouteWithChildren,
+  PendingRoute: PendingRoute,
   RegisterRoute: RegisterRoute,
   ProductSkuRoute: ProductSkuRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,

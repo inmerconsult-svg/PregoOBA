@@ -92,7 +92,7 @@ export const listProducts = createServerFn({ method: "GET" }).handler(async () =
   const rows = await sql<Record<string, unknown>>`
     select * from products
     where active = true
-      and (stock > 0 or (eta is not null and btrim(eta) <> ''))
+      and (stock > 0 or (eta is not null and eta ~ '[0-9]{4}'))
     order by product_group, category_code, sku
   `;
   const order = new Map<string, number>(GROUPS.map((g, i) => [g.id, i]));
@@ -110,7 +110,7 @@ export const getProduct = createServerFn({ method: "GET" })
       select * from products
       where sku = ${sku}
         and active = true
-        and (stock > 0 or (eta is not null and btrim(eta) <> ''))
+        and (stock > 0 or (eta is not null and eta ~ '[0-9]{4}'))
       limit 1
     `;
     return rows[0] ? mapProductRow(rows[0]) : null;

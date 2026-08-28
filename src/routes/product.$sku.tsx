@@ -11,7 +11,7 @@ import { categoryName, hasProductPhoto, productFeatures, productImage, productNa
 import { formatEur, roundToCarton } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
 import { useCart } from "@/store/cart";
-import { SignedIn, SignedOut } from "@/lib/auth/gates";
+import { useMyProfile } from "@/lib/auth/use-profile";
 
 export const Route = createFileRoute("/product/$sku")({ component: ProductPage });
 
@@ -19,6 +19,7 @@ function ProductPage() {
   const { sku } = Route.useParams();
   const { t, lang } = useI18n();
   const add = useCart((s) => s.add);
+  const { isApproved, isAwaiting } = useMyProfile();
   const productQ = useQuery({ queryKey: ["product", sku], queryFn: () => getProduct({ data: sku }) });
   const allQ = useQuery({ queryKey: ["products"], queryFn: () => listProducts() });
   const p = productQ.data;
@@ -64,43 +65,56 @@ function ProductPage() {
             <StockBadge stock={p.stock} incoming={p.incoming} eta={p.eta} />
           </div>
           {p.stock <= 0 ? <p className="mt-3 text-sm text-muted">{t("product.backorderNote")}</p> : null}
-          <SignedIn>
-            <p className="mt-8 text-xs uppercase tracking-wider text-muted">{t("product.net")}</p>
-            <p className="text-3xl font-medium tabular-nums">{formatEur(p.netPrice, lang)}</p>
-            <p className="mt-1 text-sm text-muted">
-              {t("product.carton")} {p.cartonQty} {t("product.pcs")}
-            </p>
-            <div className="mt-6 flex flex-wrap items-center gap-3">
-              <input
-                type="number"
-                min={p.cartonQty}
-                step={p.cartonQty}
-                value={amount}
-                onChange={(e) => setQty(roundToCarton(Number(e.target.value), p.cartonQty))}
-                className="h-11 w-28 rounded-lg border border-line bg-surface px-3 tabular-nums"
-              />
-              <Button
-                onClick={() => {
-                  add(p.sku, amount, p.cartonQty);
-                }}
-              >
-                {t("product.add")}
-              </Button>
-              {p.datasheetUrl ? <DatasheetLink product={p} /> : null}
-            </div>
-          </SignedIn>
-          <SignedOut>
-            <p className="mt-8 max-w-sm text-sm text-muted">{t("product.loginForPrice")}</p>
-            <div className="mt-4 flex flex-wrap items-center gap-3">
-              <Link to="/login">
-                <Button>{t("nav.login")}</Button>
-              </Link>
-              <Link to="/register">
-                <Button variant="secondary">{t("nav.register")}</Button>
-              </Link>
-              {p.datasheetUrl ? <DatasheetLink product={p} /> : null}
-            </div>
-          </SignedOut>
+          {isApproved ? (
+            <>
+              <p className="mt-8 text-xs uppercase tracking-wider text-muted">{t("product.net")}</p>
+              <p className="text-3xl font-medium tabular-nums">{formatEur(p.netPrice, lang)}</p>
+              <p className="mt-1 text-sm text-muted">
+                {t("product.carton")} {p.cartonQty} {t("product.pcs")}
+              </p>
+              <div className="mt-6 flex flex-wrap items-center gap-3">
+                <input
+                  type="number"
+                  min={p.cartonQty}
+                  step={p.cartonQty}
+                  value={amount}
+                  onChange={(e) => setQty(roundToCarton(Number(e.target.value), p.cartonQty))}
+                  className="h-11 w-28 rounded-lg border border-line bg-surface px-3 tabular-nums"
+                />
+                <Button
+                  onClick={() => {
+                    add(p.sku, amount, p.cartonQty);
+                  }}
+                >
+                  {t("product.add")}
+                </Button>
+                {p.datasheetUrl ? <DatasheetLink product={p} /> : null}
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="mt-8 max-w-sm text-sm text-muted">
+                {isAwaiting ? t("pending.lead") : t("product.loginForPrice")}
+              </p>
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                {isAwaiting ? (
+                  <Link to="/pending">
+                    <Button>{t("pending.short")}</Button>
+                  </Link>
+                ) : (
+                  <>
+                    <Link to="/login">
+                      <Button>{t("nav.login")}</Button>
+                    </Link>
+                    <Link to="/register">
+                      <Button variant="secondary">{t("nav.register")}</Button>
+                    </Link>
+                  </>
+                )}
+                {p.datasheetUrl ? <DatasheetLink product={p} /> : null}
+              </div>
+            </>
+          )}
           {features.length ? (
             <div className="mt-8">
               <h2 className="text-xs uppercase tracking-wider text-muted">{t("product.features")}</h2>

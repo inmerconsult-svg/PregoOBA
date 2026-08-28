@@ -1,6 +1,7 @@
 import type { Lang } from "./utils";
 import type { Product } from "./types";
 import datasheetFilenames from "@/data/datasheet-filenames.json";
+import { hasArrivalDate } from "./commerce-rules";
 
 export const GROUPS = [
   { id: "coffee", image: "/images/group-coffee.jpg" },
@@ -90,11 +91,11 @@ export function datasheetDownloadName(p: Product): string {
   return `Prego ${safe} ${p.sku}.pdf`;
 }
 
-/** Customer catalog: in stock, or out of stock with an Excel ETA. */
+/** Customer catalog: in stock, or out of stock with a dated Excel ETA (must include a year). */
 export function isCustomerVisible(p: { stock: number; eta: string | null; active?: boolean }): boolean {
   if (p.active === false) return false;
   if (p.stock > 0) return true;
-  return Boolean(p.eta && String(p.eta).trim());
+  return hasArrivalDate(p.eta);
 }
 
 export function mapProductRow(row: Record<string, unknown>): Product {

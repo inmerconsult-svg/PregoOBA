@@ -7,13 +7,14 @@ import { productName, categoryName, productImage, hasProductPhoto } from "@/lib/
 import { formatEur } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
 import { useCart } from "@/store/cart";
-import { SignedIn, SignedOut } from "@/lib/auth/gates";
+import { useMyProfile } from "@/lib/auth/use-profile";
 import type { Product } from "@/lib/types";
 
 export function ProductCard({ product }: { product: Product }) {
   const { lang, t } = useI18n();
   const add = useCart((s) => s.add);
   const photo = hasProductPhoto(product);
+  const { isApproved, isAwaiting } = useMyProfile();
   return (
     <article className="group flex flex-col overflow-hidden rounded-xl border border-line bg-surface">
       <Link to="/product/$sku" params={{ sku: product.sku }} className="block">
@@ -44,7 +45,7 @@ export function ProductCard({ product }: { product: Product }) {
         </Link>
         <StockBadge stock={product.stock} incoming={product.incoming} eta={product.eta} />
         <div className="mt-auto flex items-end justify-between gap-3">
-          <SignedIn>
+          {isApproved ? (
             <div>
               <p className="text-xs uppercase tracking-wider text-muted">{t("product.net")}</p>
               <p className="font-medium tabular-nums text-ink">{formatEur(product.netPrice, lang)}</p>
@@ -52,15 +53,17 @@ export function ProductCard({ product }: { product: Product }) {
                 {t("product.carton")} {product.cartonQty} {t("product.pcs")}
               </p>
             </div>
-          </SignedIn>
-          <SignedOut>
-            <Link to="/login" className="max-w-40 text-xs leading-snug text-muted underline hover:text-ink">
-              {t("product.loginForPrice")}
+          ) : (
+            <Link
+              to={isAwaiting ? "/pending" : "/login"}
+              className="max-w-40 text-xs leading-snug text-muted underline hover:text-ink"
+            >
+              {isAwaiting ? t("pending.short") : t("product.loginForPrice")}
             </Link>
-          </SignedOut>
+          )}
           <div className="flex shrink-0 items-center gap-2">
             <DatasheetLink product={product} compact />
-            <SignedIn>
+            {isApproved ? (
               <Button
                 size="sm"
                 onClick={() => add(product.sku, product.cartonQty, product.cartonQty)}
@@ -69,7 +72,7 @@ export function ProductCard({ product }: { product: Product }) {
                 <Plus className="size-4" />
                 {t("product.add")}
               </Button>
-            </SignedIn>
+            ) : null}
           </div>
         </div>
       </div>

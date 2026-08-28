@@ -5,13 +5,17 @@ import { Button } from "@/components/ui";
 import { listProducts } from "@/lib/server/catalog";
 import { productName } from "@/lib/catalog-helpers";
 import { formatEur } from "@/lib/utils";
+import { MIN_ORDER_NET, meetsMinOrder } from "@/lib/commerce-rules";
 import { useI18n } from "@/lib/i18n";
 import { useCart } from "@/store/cart";
+import { useMyProfile } from "@/lib/auth/use-profile";
+import { PendingNotice } from "./pending";
 
 export const Route = createFileRoute("/cart")({ component: CartPage });
 
 function CartPage() {
   const { t, lang } = useI18n();
+  const { isAwaiting, isLoading } = useMyProfile();
   const lines = useCart((s) => s.lines);
   const setQty = useCart((s) => s.setQty);
   const remove = useCart((s) => s.remove);
@@ -25,6 +29,21 @@ function CartPage() {
     })
     .filter((x): x is NonNullable<typeof x> => x != null);
   const net = rows.reduce((s, r) => s + r.qty * r.product.netPrice, 0);
+
+  if (isLoading) {
+    return (
+      <Shell>
+        <p className="p-10 text-sm text-muted">{t("common.loading")}</p>
+      </Shell>
+    );
+  }
+  if (isAwaiting) {
+    return (
+      <Shell>
+        <PendingNotice />
+      </Shell>
+    );
+  }
 
   return (
     <Shell>
@@ -88,9 +107,18 @@ function CartPage() {
             <div className="text-right">
               <p className="text-xs uppercase tracking-wider text-muted">{t("cart.subtotal")}</p>
               <p className="text-2xl font-medium tabular-nums">{formatEur(net, lang)}</p>
-              <Link to="/checkout" className="mt-3 inline-block">
-                <Button>{t("cart.checkout")}</Button>
-              </Link>
+              {!meetsMinOrder(net) ? (
+                <p className="mt-2 max-w-xs text-sm text-accent">{t("checkout.minOrder", { n: MIN_ORDER_NET })}</p>
+              ) : null}
+              {meetsMinOrder(net) ? (
+                <Link to="/checkout" className="mt-3 inline-block">
+                  <Button>{t("cart.checkout")}</Button>
+                </Link>
+              ) : (
+                <Button className="mt-3" disabled>
+                  {t("cart.checkout")}
+                </Button>
+              )}
             </div>
           </div>
         ) : null}
