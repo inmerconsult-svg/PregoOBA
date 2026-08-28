@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Shell } from "@/components/shell";
 import { Button, Field, Input, Textarea } from "@/components/ui";
-import { GROUPS } from "@/lib/catalog-helpers";
+import { OrderList } from "@/components/order-list";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { RedirectToSignIn } from "@/lib/auth/gates";
 import {
@@ -418,52 +418,22 @@ function ImportAdmin() {
 }
 
 function OrdersAdmin() {
-  const { t, lang } = useI18n();
+  const { t } = useI18n();
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ["admin-orders"], queryFn: () => adminListOrders() });
   const orders = q.data ?? [];
-  const statuses = ["submitted", "confirmed", "processing", "shipped", "cancelled"] as const;
   return (
-    <div className="overflow-x-auto rounded-xl border border-line bg-surface">
-      <table className="w-full min-w-2xl text-sm">
-        <thead className="text-left text-xs uppercase tracking-wider text-muted">
-          <tr>
-            <th className="px-3 py-2">No</th>
-            <th className="px-3 py-2">{t("account.company")}</th>
-            <th className="px-3 py-2">{t("checkout.total")}</th>
-            <th className="px-3 py-2">Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          {orders.map((o) => (
-            <tr key={o.id} className="border-t border-line">
-              <td className="px-3 py-2 font-medium">{o.orderNo}</td>
-              <td className="px-3 py-2">
-                {o.companyName}
-                <span className="block text-xs text-muted">{o.email}</span>
-              </td>
-              <td className="px-3 py-2 tabular-nums">{formatEur(o.grandTotal, lang)}</td>
-              <td className="px-3 py-2">
-                <select
-                  className="h-9 rounded-md border border-line bg-surface px-2 text-sm"
-                  value={o.status}
-                  onChange={(e) => {
-                    void setOrderStatus({ data: { id: o.id, status: e.target.value } }).then(() =>
-                      qc.invalidateQueries({ queryKey: ["admin-orders"] }),
-                    );
-                  }}
-                >
-                  {statuses.map((s) => (
-                    <option key={s} value={s}>
-                      {t(`orders.status.${s}`)}
-                    </option>
-                  ))}
-                </select>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div>
+      <p className="mb-4 text-sm text-muted">{t("orders.adminLead")}</p>
+      <OrderList
+        orders={orders}
+        admin
+        onStatus={(id, status) => {
+          void setOrderStatus({ data: { id, status } }).then(() =>
+            qc.invalidateQueries({ queryKey: ["admin-orders"] }),
+          );
+        }}
+      />
     </div>
   );
 }
