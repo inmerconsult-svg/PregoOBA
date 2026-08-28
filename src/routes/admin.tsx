@@ -6,6 +6,7 @@ import { Shell } from "@/components/shell";
 import { Button, Field, Input, Textarea } from "@/components/ui";
 import { GROUPS } from "@/lib/catalog-helpers";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
+import { RedirectToSignIn } from "@/lib/auth/gates";
 import {
   adminListProducts,
   deleteProduct,
@@ -24,8 +25,9 @@ import {
   getSettings,
 } from "@/lib/server/commerce";
 import { formatEur } from "@/lib/utils";
+import { downloadCsv, stamp } from "@/lib/csv";
 import { useI18n } from "@/lib/i18n";
-import type { Product, Profile } from "@/lib/types";
+import type { Order, Product, Profile } from "@/lib/types";
 
 export const Route = createFileRoute("/admin")({ component: AdminPage });
 
@@ -121,6 +123,7 @@ function Overview() {
           </div>
         ))}
       </div>
+      <ExportPanel />
       <h2 className="mt-10 text-lg font-medium">Email</h2>
       <ul className="mt-3 divide-y divide-line rounded-xl border border-line bg-surface text-sm">
         {d.emails.map((e) => (
@@ -564,3 +567,116 @@ function SettingsAdmin() {
     </form>
   );
 }
+
+function ExportPanel() {
+  const { t } = useI18n();
+  const products = useQuery({ queryKey: ["admin-products"], queryFn: () => adminListProducts() });
+  const customers = useQuery({ queryKey: ["admin-customers"], queryFn: () => listCustomers() });
+  const orders = useQuery({ queryKey: ["admin-orders"], queryFn: () => adminListOrders() });
+  return (
+    <div className="mt-10 rounded-xl border border-line bg-surface p-5">
+      <h2 className="text-lg font-medium">{t("admin.export")}</h2>
+      <p className="mt-1 max-w-2xl text-sm text-muted">{t("admin.exportLead")}</p>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Button
+          type="button"
+          variant="secondary"
+          disabled={!products.data}
+          onClick={() => products.data && exportProductsCsv(products.data)}
+        >
+          {t("admin.exportProducts")}
+        </Button>
+        <Button
+          type="button"
+          variant="secondary"
+          disabled={!customers.data}
+          onClick={() => customers.data && exportCustomersCsv(customers.data)}
+        >
+          {t("admin.exportCustomers")}
+        </Button>
+        <Button
+          type="button"
+          variant="secondary"
+          disabled={!orders.data}
+          onClick={() => orders.data && exportOrdersCsv(orders.data)}
+        >
+          {t("admin.exportOrders")}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function exportProductsCsv(products: Product[]) {
+  downloadCsv(
+    `prego-tuotteet-${stamp()}.csv`,
+    [
+      "Tuote",
+      "Kuvaus",
+      "EAN",
+      "Alaryhmä",
+      "Myyntihinta",
+      "Myyntiyks",
+      "Vapaasaldo",
+      "Tilattuna",
+      "Varaukset",
+      "Jälkitoimitus",
+      "ETA",
+      "Active",
+    ],
+    products.map((p) => [
+      p.sku,
+      p.nameFi,
+      p.ean,
+      `${p.categoryCode} ${p.categoryFi}`.trim(),
+      p.netPrice.toFixed(2).replace(".", ","),
+      p.cartonQty,
+      p.stock,
+      p.incoming,
+      p.reserved,
+      p.backorder,
+      p.eta,
+      p.active ? "1" : "0",
+    ]),
+  );
+}
+
+function exportCustomersCsv(customers: Profile[]) {
+  downloadCsv(
+    `prego-asiakkaat-${stamp()}.csv`,
+    ["Email", "Nimi", "Yritys", "Y-tunnus", "Puhelin", "Osoite", "Postinumero", "Kaupunki", "Maa", "Rooli", "Luotu"],
+    customers.map((c) => [
+      c.email,
+      c.displayName,
+      c.companyName,
+      c.vatNumber,
+      c.phone,
+      c.addressLine,
+      c.postalCode,
+      c.city,
+      c.country,
+      c.role,
+      c.createdAt,
+    ]),
+  );
+}
+
+function exportOrdersCsv(orders: Order[]) {
+  downloadCsv(
+    `prego-tilaukset-${stamp()}.csv`,
+    ["Tilausnro", "Pvm", "Tila", "Yritys", "Y-tunnus", "Email", "Veroton", "ALV", "Yhteensä", "Rivit"],
+    orders.map((o) => [
+      o.orderNo,
+      o.createdAt,
+      o.status,
+      o.companyName,
+      o.vatNumber,
+      o.email,
+      o.netTotal.toFixed(2).replace(".", ","),
+      o.vatTotal.toFixed(2).replace(".", ","),
+      o.grandTotal.toFixed(2).replace(".", ","),
+      o.items.map((i) => `${i.sku}×${i.qty}`).join(" "),
+    ]),
+  );
+}
+

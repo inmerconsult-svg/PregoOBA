@@ -1,0 +1,288 @@
+PREGO B2B — projektikuvaus jatkokehitystä varten
+================================================
+Päivitetty: 2026-08-28
+Brändi: Prego
+Myynti ja sivusto: Suomen 585 Oy (Y-tunnus 2840338-9)
+Maahantuonti: Inbound Finland Oy
+Yhteys: Olavi Barman, barmanol@gmail.com, p. 0400 777 508
+Osoite: Suvitie 15, 16500 HERRALA
+
+Tämä on B2B-tilausportaali, ei kuluttajaverkkokauppa.
+Kirjautunut ja HYVÄKSYTTY asiakas selaa valikoimaa, lisää myyntieriä koriin
+ja lähettää tilauksen sähköpostitse. Maksua ei peritä verkossa. Admin
+vahvistaa tilauksen ja hoitaa laskutuksen muualla.
+
+
+1. MISSÄ MIKÄKIN ASUU
+---------------------
+Koodi ja PDF-datasheetit:  GitHub  inmerconsult-svg/PregoOBA  (haara main)
+Sivusto (hostaus):         Vercel-projekti prego-oba
+                           https://prego-oba.vercel.app
+Asiakkaat, tilaukset,
+salasanat, varastosaldot:  Neon PostgreSQL (eu-central-1)
+                           Yhteys merkkijonolla DATABASE_URL
+Tuotekuvat ja PDF:t:       repon kansio public/  (Vercel jakaa staattisena)
+Sähköposti:                Resend (RESEND_API_KEY)
+
+
+2. ÄLÄ KOSKAAN COMMITOI NÄITÄ
+-----------------------------
+.node_modules   .vercel   .output   .tanstack   .nitro
+.env            artifacts   attachments   screenshots   .grok
+*.zip           AGENTS.md   startup.sh
+
+Jos .vercel-kansio menee gitiin, Vercel julkaisee VANHAN valmiin buildin
+(~9 sekunnin deploy) eikä rakenna src-koodia. Poista .vercel ennen pushia.
+Oikea build kestää 1–3 minuuttia.
+
+
+3. TEKNINEN PINO
+----------------
+TanStack Start (Vite + tiedostopohjainen reititys + server functions)
+React, Tailwind v4, Zustand (kori), Better Auth (sähköposti+salasana)
+Neon Postgres tuotannossa; paikallisessa devissä PGLite jos DATABASE_URL puuttuu
+Nitro-preset: vercel (vite.config.ts, vain buildissa)
+Kielet: fi (oletus), en, sv, no, et    src/lib/i18n.tsx
+
+
+4. KÄYNNISTYS PAIKALLISESTI
+---------------------------
+Node.js 22+, npm
+  npm install
+  npm run dev          # 0.0.0.0:8080
+  npm run build        # ajaa myös migraatiot jos DATABASE_URL on asetettu
+  npm run db:migrate   # scripts/migrate.mjs
+
+Ilman DATABASE_URL:ää käytetään upotettua PGLiteä (data katoaa restartissa).
+
+
+5. YMPÄRISTÖMUUTTUJAT (Vercel → Settings → Environment Variables)
+----------------------------------------------------------------
+Pakolliset (Production + Preview + Development):
+
+  DATABASE_URL          Neon connection string (Secret)
+  BETTER_AUTH_SECRET    satunnainen 32+ merkkiä (Secret)
+  BETTER_AUTH_URL       https://prego-oba.vercel.app   ilman kauttaviivaa (Config)
+
+Sähköposti:
+
+  RESEND_API_KEY        Resend API-avain (Secret)
+  ORDER_EMAIL_FROM      Prego B2B <onboarding@resend.dev>
+                        tuotannossa oma domain kun se on varmennettu Resendissä,
+                        esim. Prego B2B <tilaukset@oma-domain.fi>
+
+Älä laita näitä gitiin. Vercel injektoi ne buildiin ja ajoon.
+Uusi env → Redeploy.
+
+
+6. TIETOKANTA (Neon)
+--------------------
+Migraatiot: migrations/*.sql  (ajetaan npm run build / db:migrate)
+  0001_auth.sql             Better Auth -taulut (user, session, account, verification)
+  0002_schema.sql           profiles, products, orders, order_items, settings, email_log, import_log
+  0003_product_details.sql  image_url, datasheet_url, features_*
+
+Tärkeät taulut:
+  profiles      user_id, email, company_name, vat_number, role, approved_at
+                role: pending | customer | admin
+  products      sku (PK), ean, name_fi/en/sv/no/et, category_*, product_group,
+                net_price, carton_qty, stock, incoming, reserved, backorder, eta, active,
+                image_url, datasheet_url, features_fi/en/sv/no/et
+  orders        order_no, status, osoitteet, net/vat/grand
+                status: submitted | confirmed | processing | shipped | cancelled
+  order_items   sku, qty, unit_price, line_total
+  settings      order_email, company_name, vat_rate, brand_name
+  email_log     lähetetyt tilausviestit (vaikka Resend epäonnistuisi, rivi jää)
+
+Ensimmäinen rekisteröitynyt käyttäjä saa roolin admin.
+Seuraavat saavat pending. Admin hyväksyy: Ylläpito → Asiakkaat → Hyväksy.
+
+Tuotekanta seedataan tyhjään kantaan tiedostosta src/data/products.json
+(seedIfEmpty). Tuotannossa Neon on jo seedattu; älä tyhjennä kantaa kevyin perustein.
+
+Palautus: Neon-konsoli → Restore / Time Travel.
+  Ilmainen tili: n. 6 tuntia historiaa — B2B:lle liian lyhyt.
+  Launch-paketti: pidempi ikkuna.
+  Admin-paneelista voi ladata CSV-varmuuskopiot (tuotteet, asiakkaat, tilaukset).
+
+
+7. KANSIORAKENNE
+----------------
+src/routes/                 sivut (TanStack file routing)
+  index.tsx                 etusivu, 9 tuoteryhmää
+  catalog.tsx               valikoima + pikasyöttö SKU
+  product.$sku.tsx          tuotekortti
+  cart.tsx  checkout.tsx    kori ja tilauksen lähetys
+  login.tsx register.tsx    tili
+  pending.tsx               odottaa adminin hyväksyntää
+  orders.tsx  orders.$id.tsx
+  account.tsx  contact.tsx  admin.tsx
+  api/auth/$.ts             Better Auth API
+
+src/lib/server/catalog.ts   tuotteet, Excel-tuonti, admin CRUD
+src/lib/server/commerce.ts  profiilit, tilaukset, sähköposti, asetukset
+src/lib/excel-parse.ts      SpreadsheetML (.xls) ja CSV
+src/lib/catalog-helpers.ts  ryhmät, näkyvyys, mapProductRow, guessGroup
+src/lib/commerce-rules.ts   minimitilaus 300 €, ETA-sääntö
+src/lib/order-pdf.ts        tilaus-PDF (pdf-lib + public/fonts/LiberationSans*)
+src/lib/i18n.tsx            kaikki käyttöliittymätekstit
+src/lib/auth/               Better Auth client/server
+src/store/cart.ts           kori (selaimen localStorage)
+src/data/products.json      seed / referenssikatalogi
+src/data/datasheet-filenames.json  alkuperäiset PDF-nimet lataukseen
+
+public/datasheets/*.pdf     alkuperäiset tuotedatasheetit
+public/images/products/     tuotekuvat (SKU.jpg)
+public/images/group-*.jpg   etusivun ryhmäkuvat
+public/prego-logo.png       läpinäkyvä logo
+public/prego-stock-template.xls
+migrations/                 SQL
+scripts/migrate.mjs         Vercel-buildin migraattori
+
+
+8. SIVUKARTTA
+-------------
+/                 etusivu
+/catalog          valikoima  ?group=coffee|kettles|food|homecare|electronics|audio|health|hair|shave
+/product/:sku
+/cart  /checkout
+/login  /register  /pending
+/orders  /orders/:id
+/account  /contact  /admin
+/datasheets/P938.pdf   suora PDF
+
+
+9. LIIKESÄÄNNÖT
+---------------
+Hinnat ja myyntierä: vain kirjautunut JA hyväksytty (customer|admin).
+Vieras ja pending näkevät valikoiman ilman hintoja.
+
+Asiakasnäkymä piilottaa tuotteen jos:
+  - active = false TAI
+  - stock = 0 JA eta ei sisällä vuotta (pelkkä "30.9" ei riitä; "30.9.2026" riittää)
+
+Varasto väreinä, ei lukuina:
+  vihreä  stock > 10
+  keltainen  1–10
+  punainen  0 (näkyy vain jos on kelvollinen ETA)
+
+Tilausmäärä pyöristetään myyntierään (carton_qty) ylöspäin.
+Minimitilaus 300 € veroton (alv 0). Estetään korissa, kassalla ja palvelimella.
+
+Uusi yritys: register → role pending → admin Hyväksy → customer.
+Pending ei pääse koriin, kassalle eikä tilaushistoriaan.
+
+Tilaus → tallennetaan Neon → sähköposti settings.order_email -osoitteisiin
+(pilkulla useampi) + kopio tilaajalle. PDF ladattavissa tilaussivulta.
+
+ALV 25,5 % oletus; käännetty verovelvollisuus = 0 %.
+
+
+10. TUOTERYHMÄT (product_group)
+-------------------------------
+coffee        Kahvinkeittimet
+kettles       Vedenkeittimet
+food          Ruuan valmistus
+homecare      Kodinhoito & vaa’at
+electronics   Elektroniikka & kamerat
+audio         Audio
+health        Terveys & Hyvinvointi
+hair          Hiustenhoito
+shave         Parranajo & hiustenleikkaus
+
+Koodit (Excel-alaryhmä → ryhmä): src/lib/catalog-helpers.ts  guessGroup()
+
+
+11. ADMIN
+---------
+URL: /admin  (vain role=admin)
+
+Välilehdet:
+  Yhteenveto     kortit + sähköpostiloki + CSV-vienti
+  Tuotteet       haku, lisäys, muokkaus, poisto
+  Varastoexcel   drop-zone, sama .xls/.csv kuin Inbound-raportti
+  Tilaukset      tila: submitted → confirmed → processing → shipped / cancelled
+  Asiakkaat      pending ensin, nappi Hyväksy
+  Asetukset      tilausten sähköposti (useampi pilkulla), ALV-%, yrityksen nimi
+
+Excel-sarakkeet (tunnistus nimen osajonosta, src/lib/excel-parse.ts):
+  Tuote / sku
+  Kuvaus / name
+  EAN
+  Alaryhmä / category
+  Myyntihinta / price
+  Myyntiyks / carton
+  Vapaasaldo / stock
+  Tilattuna / incoming
+  Varaukset / reserved
+  Jälkitoimitus / backorder
+  ETA / saapuminen
+
+Tuonti päivittää saldon, hinnan, erän, ETA:n SKU:n mukaan.
+Kuvat, PDF-polut ja features säilyvät. Uusi SKU lisätään.
+Valinnainen: piilota SKU:t joita ei ole tiedostossa.
+
+CSV-vienti (Yhteenveto):
+  prego-tuotteet-VVVV-KK-PP.csv     sama muoto, voi tuoda takaisin
+  prego-asiakkaat-*.csv             ei salasanoja
+  prego-tilaukset-*.csv
+
+
+12. DATASHEETIT JA KUVAT
+------------------------
+PDF: public/datasheets/{SKU}.pdf
+     poikkeukset: LA4KALVO.pdf (laminointitasku)
+Kuva: public/images/products/{SKU}.jpg
+Kannassa: products.datasheet_url  esim. /datasheets/P938.pdf
+          products.image_url      esim. /images/products/P938.jpg
+
+Uusi tuote: lisää PDF ja kuva public/-kansioon, syötä polut adminissa tai
+products.json-seediin, push GitHubiin.
+
+
+13. SÄHKÖPOSTI
+--------------
+src/lib/server/commerce.ts  sendOrderEmail()
+Ilman RESEND_API_KEY: tilaus tallentuu, posti ei lähde (email_log silti).
+Testilähettäjä: onboarding@resend.dev
+Oma domain: Resend → Domains → DNS, sitten ORDER_EMAIL_FROM.
+
+
+14. MISSÄ KOODI MUUTTUU KUN…
+----------------------------
+Uusi kieli:            src/lib/i18n.tsx  (fi, en, ja en-pohjaiset sv/no/et)
+Uusi tuoteryhmä:       catalog-helpers.ts GROUPS + i18n groups.* + group-kuva
+Minimitilaus:          src/lib/commerce-rules.ts  MIN_ORDER_NET
+Näkyvyyssääntö:        catalog-helpers isCustomerVisible + catalog.ts SQL
+Tilausposti:           admin asetukset TAI settings.order_email Neonissa
+Hero-teksti:           i18n hero.title
+Yhteystiedot:          src/routes/contact.tsx + i18n contact.*
+Logo:                  public/prego-logo.png  (viittaukset shell.tsx)
+
+
+15. PUSH VERCELIIN
+------------------
+1. GitHub Desktop, PregoOBA-repo
+2. Korvaa src, public, migrations, package.json jne. tällä paketilla
+3. Varmista ettei .vercel tai .zip ole commitissa
+4. Commit + Push origin (main)
+5. Vercel Deployments: kesto minuutteja, ei 9 s
+6. Valmis kun etusivulla on “Testattu laatu…” ja /contact aukeaa
+
+Ensimmäinen tili sivustolla on admin:
+  https://prego-oba.vercel.app/register
+
+
+16. TUNNETUT KUOPAT
+-------------------
+- Zip GitHubiin = Vercel ei käytä koodia. Git tarvitsee kansiot, ei .zip-tiedostoa.
+- .vercel-kansion commit = vanha sivusto jää voimaan.
+- Env-muuttuja ei vaikuta ennen Redeploytä.
+- BETTER_AUTH_URL väärin → kirjautuminen hajoaa (eväste / callback).
+- Excel ETA ilman vuotta (30.9) ei tuo tuotetta valikoimaan.
+- PGLite devissä ≠ Neon tuotanto. Admin-Excel päivittää sen kannan jossa
+  DATABASE_URL osoittaa.
+
+
+Yhteys kehitykseen: tämä tiedosto + README.md + lähdekoodi yllä.
+Kysy ensin täältä, sitten src/lib/server/ ja src/routes/.
