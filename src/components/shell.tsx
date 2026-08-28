@@ -21,7 +21,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
 }
 
 function Header() {
-  const { t, lang, setLang } = useI18n();
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
@@ -32,8 +32,8 @@ function Header() {
   return (
     <header className="sticky top-0 z-40 border-b border-line bg-paper/95 backdrop-blur">
       <div className="mx-auto flex h-20 max-w-6xl items-center justify-between gap-3 px-4">
-        <Link to="/" className="flex min-w-0 items-center gap-3">
-          <img src="/prego-logo.png" alt="Prego" className="h-12 w-auto sm:h-14" />
+        <Link to="/" className="flex shrink-0 items-center gap-3">
+          <img src="/prego-logo.png" alt="Prego" className="h-10 w-auto max-w-[42vw] object-contain object-left sm:h-12 md:h-14" />
           <span className="hidden text-xs uppercase tracking-widest text-muted lg:block">{t("brand.sub")}</span>
         </Link>
         <nav className="hidden items-center gap-6 text-sm font-medium md:flex">
@@ -53,23 +53,8 @@ function Header() {
             <AdminLink label={t("nav.admin")} />
           </SignedIn>
         </nav>
-        <div className="flex items-center gap-1 sm:gap-2">
-          <div className="flex items-center gap-0.5 text-xs font-medium">
-            {LANGS.map((l) => (
-              <button
-                key={l.id}
-                type="button"
-                onClick={() => setLang(l.id)}
-                className={
-                  lang === l.id
-                    ? "rounded-md bg-ink px-1.5 py-1 text-paper"
-                    : "rounded-md px-1.5 py-1 text-muted hover:text-ink"
-                }
-              >
-                {l.id.toUpperCase()}
-              </button>
-            ))}
-          </div>
+        <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+          <LangSwitch className="hidden md:flex" />
           <Link
             to="/cart"
             className="relative grid size-11 place-items-center rounded-lg hover:bg-line/50"
@@ -107,10 +92,33 @@ function Header() {
               <Link to="/login">{t("nav.login")}</Link>
               <Link to="/register">{t("nav.register")}</Link>
             </SignedOut>
+            <LangSwitch className="mt-2 flex" />
           </div>
         </div>
       ) : null}
     </header>
+  );
+}
+
+function LangSwitch({ className }: { className?: string }) {
+  const { lang, setLang } = useI18n();
+  return (
+    <div className={`items-center gap-0.5 text-xs font-medium ${className ?? ""}`}>
+      {LANGS.map((l) => (
+        <button
+          key={l.id}
+          type="button"
+          onClick={() => setLang(l.id)}
+          className={
+            lang === l.id
+              ? "rounded-md bg-ink px-2 py-1 text-paper"
+              : "rounded-md px-2 py-1 text-muted hover:text-ink"
+          }
+        >
+          {l.id.toUpperCase()}
+        </button>
+      ))}
+    </div>
   );
 }
 
