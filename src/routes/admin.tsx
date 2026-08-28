@@ -532,7 +532,7 @@ function SettingsAdmin() {
       }}
     >
       <Field label={t("admin.orderEmail")}>
-        <Input type="email" value={form.orderEmail} onChange={(e) => setForm({ ...form, orderEmail: e.target.value })} />
+        <Input value={form.orderEmail} onChange={(e) => setForm({ ...form, orderEmail: e.target.value })} />
         <p className="mt-1 text-xs text-muted">{t("admin.emailHint")}</p>
       </Field>
       <Field label={t("admin.vatRate")}>

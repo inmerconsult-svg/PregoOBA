@@ -227,17 +227,32 @@ export const submitOrder = createServerFn({ method: "POST" })
     return { orderId, orderNo };
   });
 
+function parseEmails(raw: string): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const part of raw.split(/[;,]/)) {
+    const email = part.trim().toLowerCase();
+    if (!email || !email.includes("@") || seen.has(email)) continue;
+    seen.add(email);
+    out.push(part.trim());
+  }
+  return out;
+}
+
 async function sendOrderEmail(input: { to: string; cc: string; subject: string; text: string }) {
   const key = process.env.RESEND_API_KEY?.trim();
   if (!key) return;
   const from = process.env.ORDER_EMAIL_FROM?.trim() || "Prego B2B <onboarding@resend.dev>";
+  const to = parseEmails(input.to);
+  if (!to.length) return;
+  const cc = parseEmails(input.cc).filter((e) => !to.some((t) => t.toLowerCase() === e.toLowerCase()));
   const payload: Record<string, unknown> = {
     from,
-    to: [input.to],
+    to,
     subject: input.subject,
     text: input.text,
   };
-  if (input.cc && input.cc !== input.to) payload.cc = [input.cc];
+  if (cc.length) payload.cc = cc;
   try {
     await fetch("https://api.resend.com/emails", {
       method: "POST",
