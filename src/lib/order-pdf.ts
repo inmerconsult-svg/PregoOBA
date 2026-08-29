@@ -62,11 +62,17 @@ async function loadFontBytes(): Promise<{ regular: Uint8Array; bold: Uint8Array 
 async function embedFonts(doc: PDFDocument) {
   const bytes = await loadFontBytes();
   if (bytes) {
-    return {
-      regular: await doc.embedFont(bytes.regular, { subset: true }),
-      bold: await doc.embedFont(bytes.bold, { subset: true }),
-      unicode: true,
-    };
+    try {
+      const fontkit = await import("@pdf-lib/fontkit");
+      doc.registerFontkit(fontkit);
+      return {
+        regular: await doc.embedFont(bytes.regular, { subset: true }),
+        bold: await doc.embedFont(bytes.bold, { subset: true }),
+        unicode: true,
+      };
+    } catch (err) {
+      console.error("[prego-pdf] fontkit", err);
+    }
   }
   return {
     regular: await doc.embedFont(StandardFonts.Helvetica),

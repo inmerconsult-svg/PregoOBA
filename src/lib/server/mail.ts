@@ -3,10 +3,20 @@ function envVar(name: string): string {
   return (g.process?.env?.[name] ?? "").trim();
 }
 
+export function textToHtml(text: string): string {
+  const escaped = text
+    .replace(/&/g, "&")
+    .replace(/</g, "<")
+    .replace(/>/g, ">")
+    .replace(/\n/g, "<br/>\n");
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"/></head><body style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.45;color:#222">${escaped}</body></html>`;
+}
+
 export async function sendResendEmail(input: {
   to: string;
   subject: string;
   text: string;
+  html?: string;
 }): Promise<{ ok: boolean; error: string }> {
   const key = envVar("RESEND_API_KEY");
   if (!key) return { ok: false, error: "RESEND_API_KEY puuttuu" };
@@ -15,13 +25,14 @@ export async function sendResendEmail(input: {
     method: "POST",
     headers: {
       Authorization: `Bearer ${key}`,
-      "Content-Type": "application/json",
+      "Content-Type": "application/json; charset=utf-8",
     },
     body: JSON.stringify({
       from,
       to: [input.to],
       subject: input.subject,
       text: input.text,
+      html: input.html || textToHtml(input.text),
     }),
   });
   const json = (await res.json().catch(() => ({}))) as { message?: string; name?: string };
@@ -32,21 +43,30 @@ export async function sendResendEmail(input: {
 }
 
 export async function sendPasswordResetMail(email: string, url: string) {
+  const text = [
+    "Hei,",
+    "",
+    "Pyysit uutta salasanaa Prego B2B -portaaliin.",
+    "Avaa tämä linkki (voimassa rajoitetun ajan) ja aseta uusi salasana:",
+    "",
+    url,
+    "",
+    "Jos et pyytänyt tätä, voit jättää viestin huomiotta.",
+    "",
+    "Prego / Suomen 585 Oy",
+  ].join("\n");
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/></head><body style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.45;color:#222">
+<p>Hei,</p>
+<p>Pyysit uutta salasanaa Prego B2B -portaaliin. Avaa linkki (voimassa rajoitetun ajan) ja aseta uusi salasana:</p>
+<p><a href="${url.replace(/"/g, """)}">${url.replace(/</g, "<")}</a></p>
+<p>Jos et pyytänyt tätä, voit jättää viestin huomiotta.</p>
+<p>Prego / Suomen 585 Oy</p>
+</body></html>`;
   const sent = await sendResendEmail({
     to: email,
     subject: "Prego B2B: salasanan vaihto",
-    text: [
-      "Hei,",
-      "",
-      "Pyysit uutta salasanaa Prego B2B -portaaliin.",
-      "Avaa tämä linkki (voimassa rajoitetun ajan) ja aseta uusi salasana:",
-      "",
-      url,
-      "",
-      "Jos et pyytänyt tätä, voit jättää viestin huomiotta.",
-      "",
-      "Prego / Suomen 585 Oy",
-    ].join("\n"),
+    text,
+    html,
   });
   if (!sent.ok) {
     console.error("[prego-reset]", email, sent.error);

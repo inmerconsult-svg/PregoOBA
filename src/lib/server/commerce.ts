@@ -5,6 +5,7 @@ import { mapProductRow } from "@/lib/catalog-helpers";
 import type { Order, OrderItem, Profile } from "@/lib/types";
 import { MIN_ORDER_NET, meetsMinOrder } from "@/lib/commerce-rules";
 import { buildOrderPdf, orderPdfFilename } from "@/lib/order-pdf";
+import { textToHtml } from "@/lib/server/mail";
 
 function mapProfile(row: Record<string, unknown>): Profile {
   return {
@@ -302,7 +303,7 @@ async function resendSend(key: string, payload: Record<string, unknown>): Promis
     method: "POST",
     headers: {
       Authorization: `Bearer ${key}`,
-      "Content-Type": "application/json",
+      "Content-Type": "application/json; charset=utf-8",
     },
     body: JSON.stringify(payload),
   });
@@ -340,6 +341,7 @@ async function sendOrderEmail(input: {
       to,
       subject: input.subject,
       text: input.text,
+      html: textToHtml(input.text),
       attachments,
     });
     if (first.ok) anyOk = true;
@@ -352,6 +354,7 @@ async function sendOrderEmail(input: {
       to: cc,
       subject: `Tilausvahvistus: ${input.subject}`,
       text: input.text,
+      html: textToHtml(input.text),
       attachments,
     });
     if (copy.ok) anyOk = true;
