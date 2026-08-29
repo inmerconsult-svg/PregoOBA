@@ -23,6 +23,7 @@ import { Route as RegisterRouteImport } from './routes/register'
 import { Route as OrdersIdRouteImport } from './routes/orders.$id'
 import { Route as ProductSkuRouteImport } from './routes/product.$sku'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as ApiDatasheetsFileRouteImport } from './routes/api/datasheets.$file'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -94,6 +95,11 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiDatasheetsFileRoute = ApiDatasheetsFileRouteImport.update({
+  id: '/api/datasheets/$file',
+  path: '/api/datasheets/$file',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -110,6 +116,7 @@ export interface FileRoutesByFullPath {
   '/orders/$id': typeof OrdersIdRoute
   '/product/$sku': typeof ProductSkuRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/datasheets/$file': typeof ApiDatasheetsFileRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -126,6 +133,7 @@ export interface FileRoutesByTo {
   '/orders/$id': typeof OrdersIdRoute
   '/product/$sku': typeof ProductSkuRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/datasheets/$file': typeof ApiDatasheetsFileRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -143,6 +151,7 @@ export interface FileRoutesById {
   '/orders/$id': typeof OrdersIdRoute
   '/product/$sku': typeof ProductSkuRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/datasheets/$file': typeof ApiDatasheetsFileRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -161,6 +170,7 @@ export interface FileRouteTypes {
     | '/orders/$id'
     | '/product/$sku'
     | '/api/auth/$'
+    | '/api/datasheets/$file'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -177,6 +187,7 @@ export interface FileRouteTypes {
     | '/orders/$id'
     | '/product/$sku'
     | '/api/auth/$'
+    | '/api/datasheets/$file'
   id:
     | '__root__'
     | '/'
@@ -193,6 +204,7 @@ export interface FileRouteTypes {
     | '/orders/$id'
     | '/product/$sku'
     | '/api/auth/$'
+    | '/api/datasheets/$file'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -209,6 +221,7 @@ export interface RootRouteChildren {
   RegisterRoute: typeof RegisterRoute
   ProductSkuRoute: typeof ProductSkuRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiDatasheetsFileRoute: typeof ApiDatasheetsFileRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -311,6 +324,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/datasheets/$file': {
+      id: '/api/datasheets/$file'
+      path: '/api/datasheets/$file'
+      fullPath: '/api/datasheets/$file'
+      preLoaderRoute: typeof ApiDatasheetsFileRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -339,6 +359,7 @@ const rootRouteChildren: RootRouteChildren = {
   RegisterRoute: RegisterRoute,
   ProductSkuRoute: ProductSkuRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiDatasheetsFileRoute: ApiDatasheetsFileRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

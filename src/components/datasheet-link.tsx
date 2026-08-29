@@ -2,7 +2,15 @@ import { FileText } from "lucide-react";
 import { datasheetDownloadName } from "@/lib/catalog-helpers";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
+import { useMyProfile } from "@/lib/auth/use-profile";
+import { Link } from "@tanstack/react-router";
 import type { Product } from "@/lib/types";
+
+function datasheetHref(product: Product): string {
+  const url = product.datasheetUrl || "";
+  const base = url.split("/").pop() || `${product.sku}.pdf`;
+  return `/api/datasheets/${encodeURIComponent(base)}`;
+}
 
 export function DatasheetLink({
   product,
@@ -14,11 +22,29 @@ export function DatasheetLink({
   className?: string;
 }) {
   const { t } = useI18n();
+  const { isApproved, isAwaiting } = useMyProfile();
   if (!product.datasheetUrl) return null;
+  if (!isApproved) {
+    return (
+      <Link
+        to={isAwaiting ? "/pending" : "/login"}
+        title={t("product.datasheetLogin")}
+        aria-label={t("product.datasheetLogin")}
+        className={cn(
+          "inline-flex items-center justify-center border border-line bg-surface text-muted hover:text-ink",
+          compact ? "size-9 rounded-md" : "h-11 rounded-lg px-4 text-sm",
+          className,
+        )}
+      >
+        <FileText className="size-4 shrink-0" />
+        {compact ? null : t("product.datasheetLogin")}
+      </Link>
+    );
+  }
   const filename = datasheetDownloadName(product);
   return (
     <a
-      href={product.datasheetUrl}
+      href={datasheetHref(product)}
       download={filename}
       type="application/pdf"
       title={filename}

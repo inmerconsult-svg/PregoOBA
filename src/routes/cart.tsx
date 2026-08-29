@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import { Shell } from "@/components/shell";
 import { Button } from "@/components/ui";
 import { listProducts } from "@/lib/server/catalog";
@@ -86,13 +87,10 @@ function CartPage() {
                       ) : null}
                     </td>
                     <td className="px-4 py-3">
-                      <input
-                        type="number"
-                        className="h-9 w-24 rounded-md border border-line px-2 tabular-nums"
-                        min={1}
-                        step={1}
-                        value={r.qty}
-                        onChange={(e) => setQty(r.sku, Number(e.target.value), r.product.cartonQty)}
+                      <QtyInput
+                        qty={r.qty}
+                        onCommit={(n) => setQty(r.sku, n, r.product.cartonQty)}
+                        onRemove={() => remove(r.sku)}
                       />
                     </td>
                     <td className="px-4 py-3 tabular-nums">{formatEur(r.qty * r.product.netPrice, lang)}</td>
@@ -135,5 +133,56 @@ function CartPage() {
         ) : null}
       </div>
     </Shell>
+  );
+}
+
+function QtyInput({
+  qty,
+  onCommit,
+  onRemove,
+}: {
+  qty: number;
+  onCommit: (n: number) => void;
+  onRemove: () => void;
+}) {
+  const { t } = useI18n();
+  const [text, setText] = useState(String(qty));
+  const [focused, setFocused] = useState(false);
+
+  useEffect(() => {
+    if (!focused) setText(String(qty));
+  }, [qty, focused]);
+
+  function applyOrAsk() {
+    const n = Number(String(text).replace(",", "."));
+    if (!Number.isFinite(n) || n <= 0) {
+      if (window.confirm(t("cart.removeConfirm"))) onRemove();
+      else setText(String(qty));
+      return;
+    }
+    onCommit(Math.max(1, Math.round(n)));
+  }
+
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      className="h-9 w-24 rounded-md border border-line px-2 tabular-nums"
+      value={text}
+      onFocus={() => setFocused(true)}
+      onChange={(e) => {
+        const v = e.target.value.replace(/[^\d]/g, "");
+        setText(v);
+        const n = Number(v);
+        if (Number.isFinite(n) && n >= 1) onCommit(n);
+      }}
+      onBlur={() => {
+        setFocused(false);
+        applyOrAsk();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+      }}
+    />
   );
 }

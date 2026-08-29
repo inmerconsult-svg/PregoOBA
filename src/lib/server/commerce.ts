@@ -129,6 +129,27 @@ export const setCustomerRole = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+export const deleteCustomer = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((d: { userId: string }) => d)
+  .handler(async ({ context, data }) => {
+    await requireAdmin(context.userId);
+    if (data.userId === context.userId) throw new Error("Et voi poistaa omaa tunnusta");
+    const sql = await getSql();
+    const target = await sql<{ role: string }>`select role from profiles where user_id = ${data.userId}`;
+    if (!target[0]) throw new Error("Käyttäjää ei löydy");
+    if (target[0].role === "admin") {
+      const [{ n }] = await sql<{ n: number }>`select count(*)::int as n from profiles where role = 'admin'`;
+      if (n <= 1) throw new Error("Viimeistä ylläpitäjää ei voi poistaa");
+    }
+    await sql`delete from session where "userId" = ${data.userId}`;
+    await sql`delete from account where "userId" = ${data.userId}`;
+    await sql`delete from favorites where user_id = ${data.userId}`;
+    await sql`delete from profiles where user_id = ${data.userId}`;
+    await sql`delete from "user" where id = ${data.userId}`;
+    return { ok: true };
+  });
+
 type CheckoutInput = {
   lines: { sku: string; qty: number }[];
   poNumber: string;
@@ -491,4 +512,56 @@ export const sendTestEmail = createServerFn({ method: "POST" })
     `;
     if (!sent.ok) throw new Error(sent.error);
     return { ok: true, to };
+  });
+
+export const notifyNewRegistration = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .handler(async ({ context }) => {
+    const sql = await getSql();
+    const profileRows = await sql<Record<string, unknown>>`
+      select * from profiles where user_id = ${context.userId} limit 1
+    `;
+    if (!profileRows[0]) return { ok: false };
+    const profile = mapProfile(profileRows[0]);
+    if (profile.role !== "pending") return { ok: true };
+    const toRows = await sql<{ value: string }>`select value from settings where key = 'order_email'`;
+    const to = toRows[0]?.value || "barmanol@gmail.com";
+    const adminBody = [
+      "Uusi yritystili odottaa hyväksyntää.",
+      "",
+      `Yritys: ${profile.companyName || "—"}`,
+      `Y-tunnus: ${profile.vatNumber || "—"}`,
+      `Yhteyshenkilö: ${profile.displayName}`,
+      `Sähköposti: ${profile.email}`,
+      `Puhelin: ${profile.phone || "—"}`,
+      "",
+      "Hyväksy asiakas: https://prego.585.fi/admin",
+    ].join("\n");
+    const adminSent = await sendOrderEmail({
+      to,
+      cc: "",
+      subject: `Prego B2B: uusi tili ${profile.companyName || profile.email}`,
+      text: adminBody,
+    });
+    await sql`
+      insert into email_log (order_id, to_address, subject, body, status, error)
+      values (null, ${to}, ${"Prego B2B: uusi tili"}, ${adminBody}, ${adminSent.ok ? "sent" : "failed"}, ${adminSent.error})
+    `;
+    if (profile.email) {
+      const userBody = [
+        `Hei ${profile.displayName || ""},`,
+        "",
+        "Kiitos Prego B2B -tilin avaamisesta.",
+        "Ylläpitäjä tarkistaa yrityksen tiedot. Hinnat ja tilaus avautuvat, kun tili on hyväksytty.",
+        "",
+        "Prego / Suomen 585 Oy",
+      ].join("\n");
+      await sendOrderEmail({
+        to: profile.email,
+        cc: "",
+        subject: "Prego B2B: tilisi odottaa hyväksyntää",
+        text: userBody,
+      });
+    }
+    return { ok: true };
   });

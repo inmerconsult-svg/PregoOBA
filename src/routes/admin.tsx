@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, Fragment } from "react";
 import { toast } from "sonner";
 import { Shell } from "@/components/shell";
 import { Button, Field, Input, Textarea } from "@/components/ui";
@@ -19,12 +19,14 @@ import {
   adminOverview,
   ensureProfile,
   listCustomers,
+  deleteCustomer,
   saveSettings,
   setCustomerRole,
   setOrderStatus,
   getSettings,
   sendTestEmail,
 } from "@/lib/server/commerce";
+import { GROUPS } from "@/lib/catalog-helpers";
 import { formatEur } from "@/lib/utils";
 import { downloadCsv, stamp } from "@/lib/csv";
 import { useI18n } from "@/lib/i18n";
@@ -93,7 +95,7 @@ function AdminPage() {
           {tab === "products" && <ProductsAdmin />}
           {tab === "import" && <ImportAdmin />}
           {tab === "orders" && <OrdersAdmin />}
-          {tab === "customers" && <CustomersAdmin />}
+          {tab === "customers" && <CustomersAdmin currentUserId={user.id} />}
           {tab === "settings" && <SettingsAdmin />}
         </div>
       </div>
@@ -362,6 +364,172 @@ function ProductsAdmin() {
   );
 }
 
+function formatAuditTime(value: string) {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value);
+  return d.toLocaleString("fi-FI", {
+    timeZone: "Europe/Helsinki",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
+type AuditDetails = {
+  added?: { sku: string; name: string; stock: number; price: number }[];
+  changed?: { sku: string; name: string; fields: { field: string; from: string; to: string }[] }[];
+  deactivated?: { sku: string; name: string }[];
+};
+
+function parseDetails(raw: string | undefined): AuditDetails {
+  try {
+    return JSON.parse(raw || "{}") as AuditDetails;
+  } catch {
+    return {};
+  }
+}
+
+function AuditLog({
+  entries,
+}: {
+  entries: {
+    id: number;
+    filename: string;
+    products_updated: number;
+    products_added: number;
+    products_deactivated?: number;
+    products_changed?: number;
+    deactivate_missing?: boolean;
+    details?: string;
+    created_at: string;
+    actor_email?: string;
+  }[];
+}) {
+  const { t } = useI18n();
+  const [openId, setOpenId] = useState<number | null>(null);
+  return (
+    <div className="mt-10">
+      <h2 className="text-lg font-medium">{t("admin.audit")}</h2>
+      <p className="mt-1 max-w-2xl text-sm text-muted">{t("admin.auditLead")}</p>
+      <div className="mt-4 overflow-x-auto rounded-xl border border-line bg-surface">
+        <table className="w-full min-w-3xl text-sm">
+          <thead className="text-left text-xs uppercase tracking-wider text-muted">
+            <tr>
+              <th className="px-3 py-2">{t("admin.auditWhen")}</th>
+              <th className="px-3 py-2">{t("admin.auditWho")}</th>
+              <th className="px-3 py-2">{t("admin.auditFile")}</th>
+              <th className="px-3 py-2">{t("admin.auditAdded")}</th>
+              <th className="px-3 py-2">{t("admin.auditUpdated")}</th>
+              <th className="px-3 py-2">{t("admin.auditOff")}</th>
+              <th className="px-3 py-2" />
+            </tr>
+          </thead>
+          <tbody>
+            {entries.length === 0 ? (
+              <tr>
+                <td className="px-3 py-6 text-muted" colSpan={7}>
+                  {t("admin.auditEmpty")}
+                </td>
+              </tr>
+            ) : null}
+            {entries.map((l) => {
+              const details = parseDetails(l.details);
+              const open = openId === l.id;
+              return (
+                <Fragment key={l.id}>
+                  <tr className="border-t border-line">
+                    <td className="px-3 py-2 whitespace-nowrap tabular-nums">{formatAuditTime(l.created_at)}</td>
+                    <td className="px-3 py-2">{l.actor_email || "—"}</td>
+                    <td className="px-3 py-2">{l.filename}</td>
+                    <td className="px-3 py-2 tabular-nums">{l.products_added}</td>
+                    <td className="px-3 py-2 tabular-nums">{l.products_changed ?? l.products_updated}</td>
+                    <td className="px-3 py-2 tabular-nums">{l.products_deactivated ?? 0}</td>
+                    <td className="px-3 py-2 text-right">
+                      <button
+                        type="button"
+                        className="text-xs underline"
+                        onClick={() => setOpenId(open ? null : l.id)}
+                      >
+                        {open ? t("admin.auditClose") : t("admin.auditOpen")}
+                      </button>
+                    </td>
+                  </tr>
+                  {open ? (
+                    <tr className="border-t border-line bg-paper/60">
+                      <td colSpan={7} className="px-4 py-4 text-xs">
+                        <AuditDetailsBlock details={details} emptyLabel={t("admin.auditNoDiff")} />
+                      </td>
+                    </tr>
+                  ) : null}
+                </Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function AuditDetailsBlock({ details, emptyLabel }: { details: AuditDetails; emptyLabel: string }) {
+  const added = details.added ?? [];
+  const changed = details.changed ?? [];
+  const deactivated = details.deactivated ?? [];
+  if (!added.length && !changed.length && !deactivated.length) {
+    return <p className="text-muted">{emptyLabel}</p>;
+  }
+  return (
+    <div className="space-y-4">
+      {added.length ? (
+        <div>
+          <p className="font-medium">Lisätyt ({added.length})</p>
+          <ul className="mt-1 space-y-0.5">
+            {added.map((r) => (
+              <li key={r.sku}>
+                <span className="font-mono">{r.sku}</span> {r.name} · saldo {r.stock} · {r.price} €
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {changed.length ? (
+        <div>
+          <p className="font-medium">Muuttuneet ({changed.length})</p>
+          <ul className="mt-1 space-y-1">
+            {changed.map((r) => (
+              <li key={r.sku}>
+                <span className="font-mono">{r.sku}</span> {r.name}
+                <ul className="ml-4 text-muted">
+                  {r.fields.map((f) => (
+                    <li key={f.field}>
+                      {f.field}: {f.from || "—"} → {f.to || "—"}
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {deactivated.length ? (
+        <div>
+          <p className="font-medium">Piilotetut ({deactivated.length})</p>
+          <ul className="mt-1 space-y-0.5">
+            {deactivated.map((r) => (
+              <li key={r.sku}>
+                <span className="font-mono">{r.sku}</span> {r.name}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function ImportAdmin() {
   const { t } = useI18n();
   const qc = useQueryClient();
@@ -409,13 +577,7 @@ function ImportAdmin() {
         <input type="checkbox" checked={deactivate} onChange={(e) => setDeactivate(e.target.checked)} />
         {t("admin.deactivateMissing")}
       </label>
-      <ul className="mt-8 divide-y divide-line rounded-xl border border-line bg-surface text-sm">
-        {(logs.data ?? []).map((l) => (
-          <li key={l.id} className="px-4 py-3">
-            {l.filename} · +{l.products_added} / ~{l.products_updated} · {String(l.created_at).slice(0, 16)}
-          </li>
-        ))}
-      </ul>
+      <AuditLog entries={logs.data ?? []} />
     </div>
   );
 }
@@ -441,67 +603,104 @@ function OrdersAdmin() {
   );
 }
 
-function CustomersAdmin() {
+function CustomersAdmin({ currentUserId }: { currentUserId: string }) {
   const { t } = useI18n();
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ["admin-customers"], queryFn: () => listCustomers() });
   const customers = [...(q.data ?? [])].sort((a, b) => {
     if (a.role === "pending" && b.role !== "pending") return -1;
     if (a.role !== "pending" && b.role === "pending") return 1;
-    return 0;
+    return a.companyName.localeCompare(b.companyName) || a.email.localeCompare(b.email);
   });
   return (
-    <div className="overflow-x-auto rounded-xl border border-line bg-surface">
-      <table className="w-full min-w-2xl text-sm">
-        <thead className="text-left text-xs uppercase tracking-wider text-muted">
-          <tr>
-            <th className="px-3 py-2">{t("auth.email")}</th>
-            <th className="px-3 py-2">{t("account.company")}</th>
-            <th className="px-3 py-2">Role</th>
-          </tr>
-        </thead>
-        <tbody>
-          {customers.map((c) => (
-            <tr key={c.userId} className="border-t border-line">
-              <td className="px-3 py-2">
-                {c.email}
-                <span className="block text-xs text-muted">{c.displayName}</span>
-              </td>
-              <td className="px-3 py-2">{c.companyName}</td>
-              <td className="px-3 py-2">
-                <div className="flex items-center gap-2">
-                  <select
-                    className="h-9 rounded-md border border-line bg-surface px-2 text-sm"
-                    value={c.role}
-                    onChange={(e) => {
-                      void setCustomerRole({
-                        data: { userId: c.userId, role: e.target.value as Profile["role"] },
-                      }).then(() => qc.invalidateQueries({ queryKey: ["admin-customers"] }));
-                    }}
-                  >
-                    <option value="pending">{t("admin.role.pending")}</option>
-                    <option value="customer">{t("admin.role.customer")}</option>
-                    <option value="admin">{t("admin.role.admin")}</option>
-                  </select>
-                  {c.role === "pending" ? (
-                    <button
-                      type="button"
-                      className="h-9 rounded-md bg-ink px-3 text-xs font-medium text-paper"
-                      onClick={() => {
+    <div>
+      <p className="mb-4 text-sm text-muted">{t("admin.customersLead")}</p>
+      <div className="overflow-x-auto rounded-xl border border-line bg-surface">
+        <table className="w-full min-w-3xl text-sm">
+          <thead className="text-left text-xs uppercase tracking-wider text-muted">
+            <tr>
+              <th className="px-3 py-2">{t("auth.email")}</th>
+              <th className="px-3 py-2">{t("account.company")}</th>
+              <th className="px-3 py-2">{t("account.vat")}</th>
+              <th className="px-3 py-2">{t("account.phone")}</th>
+              <th className="px-3 py-2">Role</th>
+              <th className="px-3 py-2" />
+            </tr>
+          </thead>
+          <tbody>
+            {customers.length === 0 ? (
+              <tr>
+                <td className="px-3 py-6 text-muted" colSpan={6}>
+                  {t("admin.customersEmpty")}
+                </td>
+              </tr>
+            ) : null}
+            {customers.map((c) => (
+              <tr key={c.userId} className="border-t border-line">
+                <td className="px-3 py-2">
+                  {c.email}
+                  <span className="block text-xs text-muted">{c.displayName}</span>
+                </td>
+                <td className="px-3 py-2">{c.companyName || "—"}</td>
+                <td className="px-3 py-2">{c.vatNumber || "—"}</td>
+                <td className="px-3 py-2">{c.phone || "—"}</td>
+                <td className="px-3 py-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select
+                      className="h-9 rounded-md border border-line bg-surface px-2 text-sm"
+                      value={c.role}
+                      onChange={(e) => {
                         void setCustomerRole({
-                          data: { userId: c.userId, role: "customer" },
+                          data: { userId: c.userId, role: e.target.value as Profile["role"] },
                         }).then(() => qc.invalidateQueries({ queryKey: ["admin-customers"] }));
                       }}
                     >
-                      {t("admin.approve")}
+                      <option value="pending">{t("admin.role.pending")}</option>
+                      <option value="customer">{t("admin.role.customer")}</option>
+                      <option value="admin">{t("admin.role.admin")}</option>
+                    </select>
+                    {c.role === "pending" ? (
+                      <button
+                        type="button"
+                        className="h-9 rounded-md bg-ink px-3 text-xs font-medium text-paper"
+                        onClick={() => {
+                          void setCustomerRole({
+                            data: { userId: c.userId, role: "customer" },
+                          }).then(() => qc.invalidateQueries({ queryKey: ["admin-customers"] }));
+                        }}
+                      >
+                        {t("admin.approve")}
+                      </button>
+                    ) : null}
+                  </div>
+                </td>
+                <td className="px-3 py-2 text-right">
+                  {c.userId === currentUserId ? (
+                    <span className="text-xs text-muted">{t("admin.you")}</span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="text-xs text-accent hover:underline"
+                      onClick={() => {
+                        if (!window.confirm(t("admin.deleteUserConfirm", { n: c.email }))) return;
+                        void deleteCustomer({ data: { userId: c.userId } })
+                          .then(() => {
+                            toast.message(t("admin.deleted"));
+                            void qc.invalidateQueries({ queryKey: ["admin-customers"] });
+                            void qc.invalidateQueries({ queryKey: ["admin-overview"] });
+                          })
+                          .catch((err) => toast.message(err instanceof Error ? err.message : t("admin.deleteFail")));
+                      }}
+                    >
+                      {t("admin.remove")}
                     </button>
-                  ) : null}
-                </div>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -510,14 +709,16 @@ function SettingsAdmin() {
   const { t } = useI18n();
   const q = useQuery({ queryKey: ["settings"], queryFn: () => getSettings() });
   const [form, setForm] = useState({ orderEmail: "", vatRate: "25.5", companyName: "" });
+  const [ready, setReady] = useState(false);
   useEffect(() => {
-    if (!q.data) return;
+    if (!q.data || ready) return;
     setForm({
       orderEmail: q.data.order_email ?? "",
       vatRate: q.data.vat_rate ?? "25.5",
       companyName: q.data.company_name ?? "",
     });
-  }, [q.data]);
+    setReady(true);
+  }, [q.data, ready]);
   return (
     <form
       className="max-w-lg space-y-4"

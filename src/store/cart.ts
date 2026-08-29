@@ -28,10 +28,7 @@ export const useCart = create<CartState>()(
       },
       setQty: (sku, qty, _carton) => {
         const n = Math.round(qty);
-        if (!Number.isFinite(n) || n <= 0) {
-          set({ lines: get().lines.filter((l) => l.sku !== sku) });
-          return;
-        }
+        if (!Number.isFinite(n) || n <= 0) return;
         set({
           lines: get().lines.map((l) => (l.sku === sku ? { sku, qty: n } : l)),
         });

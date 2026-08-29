@@ -201,6 +201,17 @@ export const deleteProduct = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+let importAuditReady = false;
+async function ensureImportAudit(sql: Sql) {
+  if (importAuditReady) return;
+  await sql.query(`alter table import_logs add column if not exists actor_email text not null default ''`);
+  await sql.query(`alter table import_logs add column if not exists products_deactivated integer not null default 0`);
+  await sql.query(`alter table import_logs add column if not exists products_changed integer not null default 0`);
+  await sql.query(`alter table import_logs add column if not exists deactivate_missing boolean not null default false`);
+  await sql.query(`alter table import_logs add column if not exists details text not null default '{}'`);
+  importAuditReady = true;
+}
+
 export const importInventory = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator((input: { filename: string; text: string; deactivateMissing: boolean }) => input)
@@ -210,17 +221,49 @@ export const importInventory = createServerFn({ method: "POST" })
     const rows = parseInventoryFile(data.text);
     if (rows.length === 0) throw new Error("No product rows found in file");
     const sql = await getSql();
+    await ensureImportAudit(sql);
+    const actor =
+      (
+        await sql<{ email: string }>`select email from profiles where user_id = ${context.userId} limit 1`
+      )[0]?.email || "";
     let updated = 0;
     let added = 0;
     const skus: string[] = [];
+    const addedDetails: { sku: string; name: string; stock: number; price: number }[] = [];
+    const changedDetails: {
+      sku: string;
+      name: string;
+      fields: { field: string; from: string; to: string }[];
+    }[] = [];
+    const deactivatedDetails: { sku: string; name: string }[] = [];
+
+    type Existing = {
+      sku: string;
+      name_fi: string;
+      net_price: string;
+      carton_qty: number;
+      stock: number;
+      incoming: number;
+      reserved: number;
+      backorder: number;
+      eta: string | null;
+      active: boolean;
+    };
+
     for (const r of rows) {
       skus.push(r.sku);
       const cat = splitCategory(r.categoryRaw);
       const group = guessGroup(cat.code);
-      const existing = await sql<{ sku: string }>`select sku from products where sku = ${r.sku}`;
+      const existing = await sql<Existing>`
+        select sku, name_fi, net_price::text, carton_qty, stock, incoming, reserved, backorder, eta, active
+        from products where sku = ${r.sku}
+      `;
       if (existing.length === 0) {
         added += 1;
         const name = r.nameFi || r.sku;
+        if (addedDetails.length < 800) {
+          addedDetails.push({ sku: r.sku, name, stock: r.stock, price: r.netPrice });
+        }
         await sql`
           insert into products (
             sku, ean, name_fi, name_en, name_sv, name_no, name_et,
@@ -235,6 +278,22 @@ export const importInventory = createServerFn({ method: "POST" })
         `;
       } else {
         updated += 1;
+        const prev = existing[0];
+        const fields: { field: string; from: string; to: string }[] = [];
+        const push = (field: string, from: unknown, to: unknown) => {
+          if (String(from ?? "") === String(to ?? "")) return;
+          fields.push({ field, from: String(from ?? ""), to: String(to ?? "") });
+        };
+        push("varasto", Number(prev.stock), r.stock);
+        push("hinta", Number(prev.net_price), r.netPrice);
+        push("myyntierä", Number(prev.carton_qty), r.cartonQty);
+        push("tulo", Number(prev.incoming), r.incoming);
+        push("varattu", Number(prev.reserved), r.reserved);
+        push("jälkitoim.", Number(prev.backorder), r.backorder);
+        push("saapuminen", prev.eta ?? "", r.eta ?? "");
+        if (fields.length && changedDetails.length < 800) {
+          changedDetails.push({ sku: r.sku, name: prev.name_fi || r.sku, fields });
+        }
         await sql`
           update products set
             ean = case when ${r.ean} = '' then ean else ${r.ean} end,
@@ -256,30 +315,68 @@ export const importInventory = createServerFn({ method: "POST" })
     }
     if (data.deactivateMissing && skus.length > 0) {
       const keep = new Set(skus);
-      const all = await sql<{ sku: string }>`select sku from products`;
+      const all = await sql<{ sku: string; name_fi: string }>`select sku, name_fi from products where active = true`;
       for (const row of all) {
         if (!keep.has(row.sku)) {
+          if (deactivatedDetails.length < 800) {
+            deactivatedDetails.push({ sku: row.sku, name: row.name_fi || row.sku });
+          }
           await sql`update products set active = false, updated_at = now() where sku = ${row.sku}`;
         }
       }
     }
+    const details = JSON.stringify({
+      added: addedDetails,
+      changed: changedDetails,
+      deactivated: deactivatedDetails,
+    });
     await sql`
-      insert into import_logs (user_id, filename, products_updated, products_added)
-      values (${context.userId}, ${data.filename}, ${updated}, ${added})
+      insert into import_logs (
+        user_id, actor_email, filename, products_updated, products_added,
+        products_deactivated, products_changed, deactivate_missing, details
+      ) values (
+        ${context.userId}, ${actor}, ${data.filename}, ${updated}, ${added},
+        ${deactivatedDetails.length}, ${changedDetails.length}, ${data.deactivateMissing}, ${details}
+      )
     `;
-    return { updated, added, total: rows.length };
+    return { updated, added, changed: changedDetails.length, deactivated: deactivatedDetails.length, total: rows.length };
   });
+
+export type ImportLogRow = {
+  id: number;
+  filename: string;
+  products_updated: number;
+  products_added: number;
+  products_deactivated: number;
+  products_changed: number;
+  deactivate_missing: boolean;
+  details: string;
+  created_at: string;
+  actor_email: string;
+};
 
 export const listImportLogs = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
   .handler(async ({ context }) => {
     await requireAdmin(context.userId);
     const sql = await getSql();
-    return sql<{
-      id: number;
-      filename: string;
-      products_updated: number;
-      products_added: number;
-      created_at: string;
-    }>`select id, filename, products_updated, products_added, created_at from import_logs order by id desc limit 20`;
+    await ensureImportAudit(sql);
+    return sql<ImportLogRow>`
+      select
+        l.id,
+        l.filename,
+        l.products_updated,
+        l.products_added,
+        coalesce(l.products_deactivated, 0) as products_deactivated,
+        coalesce(l.products_changed, 0) as products_changed,
+        coalesce(l.deactivate_missing, false) as deactivate_missing,
+        coalesce(l.details, '{}') as details,
+        l.created_at,
+        coalesce(nullif(l.actor_email, ''), p.email, l.user_id) as actor_email
+      from import_logs l
+      left join profiles p on p.user_id = l.user_id
+      order by l.id desc
+      limit 200
+    `;
   });
+

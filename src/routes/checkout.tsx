@@ -158,32 +158,32 @@ function CheckoutPage() {
           ) : (
             <div className="mt-8 space-y-4">
               <Field label={t("account.company")}>
-                <Input required value={form.companyName} onChange={(e) => setForm({ ...form, companyName: e.target.value })} />
+                <Input required value={form.companyName} onChange={(e) => setForm((f) => ({ ...f, companyName: e.target.value }))} />
               </Field>
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label={t("account.vat")}>
-                  <Input value={form.vatNumber} onChange={(e) => setForm({ ...form, vatNumber: e.target.value })} />
+                  <Input value={form.vatNumber} onChange={(e) => setForm((f) => ({ ...f, vatNumber: e.target.value }))} />
                 </Field>
                 <Field label={t("account.phone")}>
-                  <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+                  <Input value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} />
                 </Field>
               </div>
               <h2 className="pt-2 text-sm font-medium">{t("checkout.delivery")}</h2>
               <Field label={t("account.name")}>
-                <Input required value={form.deliveryName} onChange={(e) => setForm({ ...form, deliveryName: e.target.value })} />
+                <Input required value={form.deliveryName} onChange={(e) => setForm((f) => ({ ...f, deliveryName: e.target.value }))} />
               </Field>
               <Field label={t("account.address")}>
-                <Input required value={form.deliveryAddress} onChange={(e) => setForm({ ...form, deliveryAddress: e.target.value })} />
+                <Input required value={form.deliveryAddress} onChange={(e) => setForm((f) => ({ ...f, deliveryAddress: e.target.value }))} />
               </Field>
               <div className="grid gap-4 sm:grid-cols-3">
                 <Field label={t("account.postal")}>
-                  <Input required value={form.deliveryPostal} onChange={(e) => setForm({ ...form, deliveryPostal: e.target.value })} />
+                  <Input required value={form.deliveryPostal} onChange={(e) => setForm((f) => ({ ...f, deliveryPostal: e.target.value }))} />
                 </Field>
                 <Field label={t("account.city")}>
-                  <Input required value={form.deliveryCity} onChange={(e) => setForm({ ...form, deliveryCity: e.target.value })} />
+                  <Input required value={form.deliveryCity} onChange={(e) => setForm((f) => ({ ...f, deliveryCity: e.target.value }))} />
                 </Field>
                 <Field label={t("account.country")}>
-                  <Input required value={form.deliveryCountry} onChange={(e) => setForm({ ...form, deliveryCountry: e.target.value })} />
+                  <Input required value={form.deliveryCountry} onChange={(e) => setForm((f) => ({ ...f, deliveryCountry: e.target.value }))} />
                 </Field>
               </div>
               <Field label={t("checkout.po")}>
