@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { authClient, authEnabled } from "@/lib/auth/client";
-import { ensureProfile, notifyNewRegistration, updateProfile } from "@/lib/server/commerce";
+import { completeRegistration } from "@/lib/server/commerce";
 import { Shell } from "@/components/shell";
 import { Button, Field, Input } from "@/components/ui";
 import { useI18n } from "@/lib/i18n";
@@ -37,37 +37,22 @@ function Register() {
       return;
     }
     try {
-      await ensureProfile({
-        data: { email: form.email, displayName: form.name, language: lang },
-      });
-      await updateProfile({
+      await authClient.getSession();
+      await completeRegistration({
         data: {
           displayName: form.name,
+          email: form.email,
           companyName: form.company,
           vatNumber: form.vat,
           phone: form.phone,
-          addressLine: "",
-          postalCode: "",
-          city: "",
-          country: "FI",
           language: lang,
         },
       });
-    } catch {
-      /* profile can be completed later */
-    }
-    try {
-      await notifyNewRegistration({
-        data: {
-          email: form.email,
-          displayName: form.name,
-          companyName: form.company,
-          vatNumber: form.vat,
-          phone: form.phone,
-        },
-      });
-    } catch (err) {
-      console.error("[prego-signup-mail]", err);
+    } catch (e) {
+      console.error("[prego-signup]", e);
+      setError(e instanceof Error ? e.message : t("auth.error"));
+      setBusy(false);
+      return;
     }
     setBusy(false);
     void nav({ to: "/pending" });

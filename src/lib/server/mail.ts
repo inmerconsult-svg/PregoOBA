@@ -56,7 +56,7 @@ export async function sendResendEmail(input: {
   });
   const json = (await res.json().catch(() => ({}))) as { message?: string; name?: string };
   if (res.ok) return { ok: true, error: "" };
-  const error = json.message || json.name || `Resend ${res.status}`;
+  const error = (json.message || json.name || `Resend ${res.status}`) + " (from " + from + " → " + to.join(", ") + ")";
   console.error("[prego-email]", res.status, error);
   return { ok: false, error };
 }
@@ -103,7 +103,7 @@ export async function sendSignupNotice(input: {
     });
     if (!user.ok) errors.push("hakija: " + user.error);
   }
-  return { ok: errors.length === 0, error: errors.join(" | ") };
+  return { ok: admin.ok, error: errors.join(" | ") };
 }
 
 export async function sendPasswordResetMail(email: string, url: string) {

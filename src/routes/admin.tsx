@@ -742,7 +742,8 @@ function SettingsAdmin() {
         type="button"
         variant="secondary"
         onClick={() => {
-          void sendTestEmail()
+          void saveSettings({ data: form })
+            .then(() => sendTestEmail({ data: { to: form.orderEmail } }))
             .then((r) => toast.message(t("admin.emailTestOk", { n: r.to })))
             .catch((err) => toast.message(err instanceof Error ? err.message : t("admin.emailTestFail")));
         }}

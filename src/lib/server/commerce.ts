@@ -5,7 +5,7 @@ import { mapProductRow } from "@/lib/catalog-helpers";
 import type { Order, OrderItem, Profile } from "@/lib/types";
 import { MIN_ORDER_NET, meetsMinOrder } from "@/lib/commerce-rules";
 import { buildOrderPdf, orderPdfFilename } from "@/lib/order-pdf";
-import { textToHtml, sendSignupNotice } from "@/lib/server/mail";
+import { textToHtml, sendSignupNotice, sendResendEmail } from "@/lib/server/mail";
 
 function mapProfile(row: Record<string, unknown>): Profile {
   return {
@@ -530,23 +530,108 @@ export const listEmailLog = createServerFn({ method: "GET" })
 
 export const sendTestEmail = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
-  .handler(async ({ context }) => {
+  .validator((d: { to?: string } | undefined) => d ?? {})
+  .handler(async ({ context, data }) => {
     await requireAdmin(context.userId);
     const sql = await getSql();
+    const typed = (data.to ?? "").trim();
+    if (typed.includes("@")) {
+      await sql`
+        insert into settings (key, value) values ('order_email', ${typed})
+        on conflict (key) do update set value = excluded.value
+      `;
+    }
     const rows = await sql<{ value: string }>`select value from settings where key = 'order_email'`;
-    const to = rows[0]?.value || "";
-    const sent = await sendOrderEmail({
+    const to = (rows[0]?.value || typed).trim();
+    if (!to.includes("@")) {
+      throw new Error("Tallenna tilausten sähköposti asetuksiin ennen testiä.");
+    }
+    const sent = await sendResendEmail({
       to,
-      cc: "",
       subject: "Prego B2B testiviesti",
-      text: "Tämä on testiviesti Prego B2B -portaalista. Jos näet tämän, Resend toimii.",
+      text: "Tämä on testiviesti Prego B2B -portaalista. Jos näet tämän, Resend toimii ja osoite on oikein.",
     });
     await sql`
       insert into email_log (order_id, to_address, subject, body, status, error)
-      values (null, ${to || "(tyhjä)"}, ${"Prego B2B testiviesti"}, ${sent.error || "ok"}, ${sent.ok ? "sent" : "failed"}, ${sent.error})
+      values (
+        null,
+        ${to},
+        ${"Prego B2B testiviesti"},
+        ${sent.error || "ok"},
+        ${sent.ok ? "sent" : "failed"},
+        ${sent.error || ""}
+      )
     `;
     if (!sent.ok) throw new Error(sent.error);
     return { ok: true, to };
+  });
+
+export const completeRegistration = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(
+    (d: {
+      displayName: string;
+      email: string;
+      companyName: string;
+      vatNumber: string;
+      phone: string;
+      language: string;
+    }) => d,
+  )
+  .handler(async ({ context, data }) => {
+    const sql = await getSql();
+    const existing = await sql<Record<string, unknown>>`
+      select * from profiles where user_id = ${context.userId} limit 1
+    `;
+    if (!existing[0]) {
+      const admins = await sql<{ n: number }>`select count(*)::int as n from profiles where role = 'admin'`;
+      const isFirst = (admins[0]?.n ?? 0) === 0;
+      const role = isFirst ? "admin" : "pending";
+      const approvedAt = isFirst ? new Date().toISOString() : null;
+      await sql`
+        insert into profiles (user_id, email, display_name, role, language, approved_at)
+        values (${context.userId}, ${data.email}, ${data.displayName}, ${role}, ${data.language || "fi"}, ${approvedAt})
+      `;
+    }
+    await sql`
+      update profiles set
+        email = case when ${data.email} = '' then email else ${data.email} end,
+        display_name = ${data.displayName},
+        company_name = ${data.companyName},
+        vat_number = ${data.vatNumber},
+        phone = ${data.phone},
+        language = ${data.language || "fi"}
+      where user_id = ${context.userId}
+    `;
+    const profileRows = await sql<Record<string, unknown>>`
+      select * from profiles where user_id = ${context.userId} limit 1
+    `;
+    const profile = profileRows[0] ? mapProfile(profileRows[0]) : null;
+    if (!profile || profile.role === "admin") return { ok: true, mailed: false, skipped: "admin" };
+    const toRows = await sql<{ value: string }>`select value from settings where key = 'order_email'`;
+    const to = (toRows[0]?.value || "barmanol@gmail.com").trim();
+    const payload = {
+      adminTo: to,
+      applicantEmail: data.email || profile.email,
+      displayName: data.displayName || profile.displayName,
+      companyName: data.companyName || profile.companyName,
+      vatNumber: data.vatNumber || profile.vatNumber,
+      phone: data.phone || profile.phone,
+    };
+    const sent = await sendSignupNotice(payload);
+    await sql`
+      insert into email_log (order_id, to_address, subject, body, status, error)
+      values (
+        null,
+        ${`${to}; ${payload.applicantEmail}`},
+        ${"Prego B2B: uusi tili"},
+        ${`Yritys: ${payload.companyName}\nEmail: ${payload.applicantEmail}`},
+        ${sent.ok ? "sent" : "failed"},
+        ${sent.error || ""}
+      )
+    `;
+    if (!sent.ok) console.error("[prego-signup-mail]", sent.error);
+    return { ok: true, mailed: sent.ok, mailError: sent.error };
   });
 
 export const notifyNewRegistration = createServerFn({ method: "POST" })
