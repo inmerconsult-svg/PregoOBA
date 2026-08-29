@@ -76,13 +76,21 @@ function CartPage() {
                       <Link to="/product/$sku" params={{ sku: r.sku }} className="hover:underline">
                         {productName(r.product, lang)}
                       </Link>
+                      {r.product.stock <= 0 ? (
+                        <span className="ml-2 text-xs font-semibold uppercase text-accent">{t("order.preorder")}</span>
+                      ) : null}
+                      {r.qty < r.product.cartonQty ? (
+                        <p className="mt-1 text-xs font-medium text-accent">
+                          {t("cart.belowCarton", { n: r.product.cartonQty })}
+                        </p>
+                      ) : null}
                     </td>
                     <td className="px-4 py-3">
                       <input
                         type="number"
                         className="h-9 w-24 rounded-md border border-line px-2 tabular-nums"
-                        min={r.product.cartonQty}
-                        step={r.product.cartonQty}
+                        min={1}
+                        step={1}
                         value={r.qty}
                         onChange={(e) => setQty(r.sku, Number(e.target.value), r.product.cartonQty)}
                       />
@@ -107,6 +115,9 @@ function CartPage() {
             <div className="text-right">
               <p className="text-xs uppercase tracking-wider text-muted">{t("cart.subtotal")}</p>
               <p className="text-2xl font-medium tabular-nums">{formatEur(net, lang)}</p>
+              {rows.some((r) => r.product.stock <= 0) ? (
+                <p className="mt-2 max-w-xs text-sm text-muted">{t("order.partialShip")}</p>
+              ) : null}
               {!meetsMinOrder(net) ? (
                 <p className="mt-2 max-w-xs text-sm text-accent">{t("checkout.minOrder", { n: MIN_ORDER_NET })}</p>
               ) : null}

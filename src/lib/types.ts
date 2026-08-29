@@ -56,6 +56,7 @@ export type OrderItem = {
   cartonQty: number;
   unitPrice: number;
   lineTotal: number;
+  preorder: boolean;
 };
 
 export type Order = {

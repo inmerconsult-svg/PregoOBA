@@ -16,23 +16,24 @@ export const useCart = create<CartState>()(
     (set, get) => ({
       lines: [],
       add: (sku, qty, carton) => {
-        const next = roundToCarton(qty, carton);
+        const extra = Math.max(1, Math.round(qty) || 1);
         const lines = [...get().lines];
         const i = lines.findIndex((l) => l.sku === sku);
         if (i >= 0) {
-          lines[i] = { sku, qty: roundToCarton(lines[i].qty + next, carton) };
+          lines[i] = { sku, qty: lines[i].qty + extra };
         } else {
-          lines.push({ sku, qty: next });
+          lines.push({ sku, qty: roundToCarton(extra, carton) });
         }
         set({ lines });
       },
-      setQty: (sku, qty, carton) => {
-        if (qty <= 0) {
+      setQty: (sku, qty, _carton) => {
+        const n = Math.round(qty);
+        if (!Number.isFinite(n) || n <= 0) {
           set({ lines: get().lines.filter((l) => l.sku !== sku) });
           return;
         }
         set({
-          lines: get().lines.map((l) => (l.sku === sku ? { sku, qty: roundToCarton(qty, carton) } : l)),
+          lines: get().lines.map((l) => (l.sku === sku ? { sku, qty: n } : l)),
         });
       },
       remove: (sku) => set({ lines: get().lines.filter((l) => l.sku !== sku) }),

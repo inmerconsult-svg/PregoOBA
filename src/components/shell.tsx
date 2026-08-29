@@ -87,6 +87,7 @@ function Header() {
               <Link to="/orders">{t("nav.orders")}</Link>
               <Link to="/account">{t("nav.account")}</Link>
               <AdminLink label={t("nav.admin")} />
+              <LogoutLink />
             </SignedIn>
             <SignedOut>
               <Link to="/login">{t("nav.login")}</Link>
@@ -97,6 +98,24 @@ function Header() {
         </div>
       ) : null}
     </header>
+  );
+}
+
+function LogoutLink() {
+  const { t } = useI18n();
+  const [busy, setBusy] = useState(false);
+  return (
+    <button
+      type="button"
+      className="text-left text-sm font-medium text-muted hover:text-ink"
+      disabled={busy}
+      onClick={() => {
+        setBusy(true);
+        void signOut().catch(() => setBusy(false));
+      }}
+    >
+      {t("nav.logout")}
+    </button>
   );
 }
 

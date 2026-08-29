@@ -207,6 +207,9 @@ function CheckoutPage() {
                 <li key={r.sku} className="flex justify-between gap-3">
                   <span>
                     {r.sku} · {productName(r.product, lang)}
+                    {r.product.stock <= 0 ? (
+                      <span className="ml-1 font-semibold uppercase text-accent">{t("order.preorder")}</span>
+                    ) : null}
                     <span className="block text-xs text-muted">
                       {r.qty} × {formatEur(r.product.netPrice, lang)}
                     </span>
@@ -215,6 +218,9 @@ function CheckoutPage() {
                 </li>
               ))}
             </ul>
+            {rows.some((r) => r.product.stock <= 0) ? (
+              <p className="mt-4 text-sm text-muted">{t("order.partialShip")}</p>
+            ) : null}
             <dl className="mt-6 space-y-1 text-sm">
               <div className="flex justify-between">
                 <dt className="text-muted">{t("cart.subtotal")}</dt>

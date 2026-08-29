@@ -109,7 +109,12 @@ export function OrderList({
                     {o.items.map((i) => (
                       <tr key={i.id} className="border-t border-line">
                         <td className="py-1.5 font-mono text-xs">{i.sku}</td>
-                        <td className="py-1.5">{i.name}</td>
+                        <td className="py-1.5">
+                          {i.name}
+                          {i.preorder ? (
+                            <span className="ml-2 text-xs font-semibold uppercase text-accent">{t("order.preorder")}</span>
+                          ) : null}
+                        </td>
                         <td className="py-1.5 tabular-nums">{i.qty}</td>
                         <td className="py-1.5 text-right tabular-nums">{formatEur(i.lineTotal, lang)}</td>
                       </tr>
@@ -130,6 +135,9 @@ export function OrderList({
                     <dd className="tabular-nums">{formatEur(o.grandTotal, lang)}</dd>
                   </div>
                 </dl>
+                {o.items.some((i) => i.preorder) ? (
+                  <p className="mt-3 text-sm text-muted">{t("order.partialShip")}</p>
+                ) : null}
               </div>
             ) : null}
           </li>

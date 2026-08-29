@@ -159,14 +159,13 @@ export const submitOrder = createServerFn({ method: "POST" })
     if (!profile) throw new Error("Profile missing");
     if (profile.role === "pending") throw new Error("Account pending approval");
 
-    const items: { sku: string; qty: number; product: ReturnType<typeof mapProductRow> }[] = [];
+    const items: { sku: string; qty: number; product: ReturnType<typeof mapProductRow>; preorder: boolean }[] = [];
     for (const line of data.lines) {
       const rows = await sql<Record<string, unknown>>`select * from products where sku = ${line.sku} and active = true`;
       if (!rows[0]) throw new Error(`Unknown SKU ${line.sku}`);
       const product = mapProductRow(rows[0]);
-      const carton = Math.max(1, product.cartonQty);
-      const qty = Math.max(carton, Math.ceil(line.qty / carton) * carton);
-      items.push({ sku: line.sku, qty, product });
+      const qty = Math.max(1, Math.round(line.qty) || 1);
+      items.push({ sku: line.sku, qty, product, preorder: product.stock <= 0 });
     }
 
     const vatRows = await sql<{ value: string }>`select value from settings where key = 'vat_rate'`;
@@ -200,8 +199,8 @@ export const submitOrder = createServerFn({ method: "POST" })
       const name = i.product.nameFi;
       const lineTotal = Math.round(i.qty * i.product.netPrice * 100) / 100;
       await sql`
-        insert into order_items (order_id, sku, name, ean, qty, carton_qty, unit_price, line_total)
-        values (${orderId}, ${i.sku}, ${name}, ${i.product.ean}, ${i.qty}, ${i.product.cartonQty}, ${i.product.netPrice}, ${lineTotal})
+        insert into order_items (order_id, sku, name, ean, qty, carton_qty, unit_price, line_total, preorder)
+        values (${orderId}, ${i.sku}, ${name}, ${i.product.ean}, ${i.qty}, ${i.product.cartonQty}, ${i.product.netPrice}, ${lineTotal}, ${i.preorder})
       `;
     }
 
@@ -216,65 +215,97 @@ export const submitOrder = createServerFn({ method: "POST" })
       "",
       ...items.map(
         (i) =>
-          `${i.sku}  ${i.product.nameFi}  ${i.qty} kpl × ${i.product.netPrice.toFixed(2)} € = ${(i.qty * i.product.netPrice).toFixed(2)} €`,
+          `${i.sku}  ${i.product.nameFi}${i.preorder ? " (ENNAKKO)" : ""}  ${i.qty} kpl × ${i.product.netPrice.toFixed(2)} € = ${(i.qty * i.product.netPrice).toFixed(2)} €`,
       ),
       "",
       `Veroton: ${netTotal.toFixed(2)} €`,
       `ALV: ${vatTotal.toFixed(2)} €`,
       `Yhteensä: ${grand.toFixed(2)} €`,
+      items.some((i) => i.preorder)
+        ? "\nENNAKKO: Tilauksella on tuotteita jotka saapuvat varastoon myöhemmin. Varastossa olevat tuotteet lähetetään osatoimituksena heti."
+        : "",
       data.notes ? `\nViesti:\n${data.notes}` : "",
     ].join("\n");
-    await sql`
-      insert into email_log (order_id, to_address, subject, body)
-      values (${orderId}, ${to}, ${"Prego B2B tilaus " + orderNo}, ${body})
-    `;
-    await sendOrderEmail({
+    const sent = await sendOrderEmail({
       to,
       cc: profile.email,
       subject: `Prego B2B tilaus ${orderNo}`,
       text: body,
     });
+    await sql`
+      insert into email_log (order_id, to_address, subject, body, status, error)
+      values (
+        ${orderId},
+        ${to},
+        ${"Prego B2B tilaus " + orderNo},
+        ${body},
+        ${sent.ok ? "sent" : "failed"},
+        ${sent.error}
+      )
+    `;
     return { orderId, orderNo };
   });
+
+function envVar(name: string): string {
+  const g = globalThis as { process?: { env?: Record<string, string | undefined> } };
+  return (g.process?.env?.[name] ?? "").trim();
+}
 
 function parseEmails(raw: string): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
   for (const part of raw.split(/[;,]/)) {
-    const email = part.trim().toLowerCase();
-    if (!email || !email.includes("@") || seen.has(email)) continue;
-    seen.add(email);
-    out.push(part.trim());
+    const email = part.trim();
+    const key = email.toLowerCase();
+    if (!email || !email.includes("@") || seen.has(key)) continue;
+    seen.add(key);
+    out.push(email);
   }
   return out;
 }
 
-async function sendOrderEmail(input: { to: string; cc: string; subject: string; text: string }) {
-  const key = process.env.RESEND_API_KEY?.trim();
-  if (!key) return;
-  const from = process.env.ORDER_EMAIL_FROM?.trim() || "Prego B2B <onboarding@resend.dev>";
+async function resendSend(key: string, payload: Record<string, unknown>): Promise<{ ok: boolean; error: string }> {
+  const res = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${key}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+  const json = (await res.json().catch(() => ({}))) as { message?: string; name?: string };
+  if (res.ok) return { ok: true, error: "" };
+  const error = json.message || json.name || `Resend ${res.status}`;
+  console.error("[prego-email]", res.status, error);
+  return { ok: false, error };
+}
+
+async function sendOrderEmail(input: {
+  to: string;
+  cc: string;
+  subject: string;
+  text: string;
+}): Promise<{ ok: boolean; error: string }> {
+  const key = envVar("RESEND_API_KEY");
+  if (!key) return { ok: false, error: "RESEND_API_KEY puuttuu Vercelistä (Redeploy env-lisäyksen jälkeen)." };
+  const from = envVar("ORDER_EMAIL_FROM") || "Prego B2B <onboarding@resend.dev>";
   const to = parseEmails(input.to);
-  if (!to.length) return;
+  if (!to.length) return { ok: false, error: "Ei vastaanottajaa (admin → tilausten sähköposti)." };
   const cc = parseEmails(input.cc).filter((e) => !to.some((t) => t.toLowerCase() === e.toLowerCase()));
-  const payload: Record<string, unknown> = {
-    from,
-    to,
-    subject: input.subject,
-    text: input.text,
-  };
-  if (cc.length) payload.cc = cc;
-  try {
-    await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${key}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
+
+  const first = await resendSend(key, { from, to, subject: input.subject, text: input.text });
+  if (!first.ok) return first;
+
+  if (cc.length) {
+    const copy = await resendSend(key, {
+      from,
+      to: cc,
+      subject: `Kopio: ${input.subject}`,
+      text: input.text,
     });
-  } catch {
-    /* order is stored even if the mailbox is unreachable */
+    if (!copy.ok) return { ok: true, error: `Myyntiin lähti, asiakaskopio ei: ${copy.error}` };
   }
+  return { ok: true, error: "" };
 }
 
 async function loadOrder(id: number, userId: string, admin: boolean): Promise<Order | null> {
@@ -320,6 +351,7 @@ function mapOrder(row: Record<string, unknown>, items: Record<string, unknown>[]
         cartonQty: num(i.carton_qty),
         unitPrice: num(i.unit_price),
         lineTotal: num(i.line_total),
+        preorder: Boolean(i.preorder) || /\(ENNAKKO\)/i.test(String(i.name ?? "")),
       }),
     ),
   };
@@ -410,8 +442,17 @@ export const adminOverview = createServerFn({ method: "GET" })
     const [{ customers }] = await sql<{ customers: number }>`select count(*)::int as customers from profiles`;
     const [{ low }] = await sql<{ low: number }>`select count(*)::int as low from products where active = true and stock > 0 and stock <= 10`;
     const [{ out }] = await sql<{ out: number }>`select count(*)::int as out from products where active = true and stock <= 0`;
-    const emails = await sql<{ id: number; to_address: string; subject: string; created_at: string }>`
-      select id, to_address, subject, created_at from email_log order by id desc limit 8
+    const emails = await sql<{
+      id: number;
+      to_address: string;
+      subject: string;
+      created_at: string;
+      status: string;
+      error: string;
+    }>`
+      select id, to_address, subject, created_at,
+             coalesce(status, '') as status, coalesce(error, '') as error
+      from email_log order by id desc limit 8
     `;
     return { products, orders, open, customers, low, out, emails };
   });
@@ -429,4 +470,25 @@ export const listEmailLog = createServerFn({ method: "GET" })
       body: string;
       created_at: string;
     }>`select id, order_id, to_address, subject, body, created_at from email_log order by id desc limit 30`;
+  });
+
+export const sendTestEmail = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .handler(async ({ context }) => {
+    await requireAdmin(context.userId);
+    const sql = await getSql();
+    const rows = await sql<{ value: string }>`select value from settings where key = 'order_email'`;
+    const to = rows[0]?.value || "";
+    const sent = await sendOrderEmail({
+      to,
+      cc: "",
+      subject: "Prego B2B testiviesti",
+      text: "Tämä on testiviesti Prego B2B -portaalista. Jos näet tämän, Resend toimii.",
+    });
+    await sql`
+      insert into email_log (order_id, to_address, subject, body, status, error)
+      values (null, ${to || "(tyhjä)"}, ${"Prego B2B testiviesti"}, ${sent.error || "ok"}, ${sent.ok ? "sent" : "failed"}, ${sent.error})
+    `;
+    if (!sent.ok) throw new Error(sent.error);
+    return { ok: true, to };
   });

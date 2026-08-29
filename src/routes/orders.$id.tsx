@@ -96,7 +96,12 @@ function OrderDetail() {
             {o.items.map((i) => (
               <tr key={i.id} className="border-t border-line">
                 <td className="py-2 font-mono text-xs">{i.sku}</td>
-                <td className="py-2">{i.name}</td>
+                <td className="py-2">
+                  {i.name}
+                  {i.preorder ? (
+                    <span className="ml-2 text-xs font-semibold uppercase text-accent">{t("order.preorder")}</span>
+                  ) : null}
+                </td>
                 <td className="py-2 tabular-nums">{i.qty}</td>
                 <td className="py-2 text-right tabular-nums">{formatEur(i.lineTotal, lang)}</td>
               </tr>
@@ -117,6 +122,9 @@ function OrderDetail() {
             <dd className="tabular-nums">{formatEur(o.grandTotal, lang)}</dd>
           </div>
         </dl>
+        {o.items.some((i) => i.preorder) ? (
+          <p className="mt-6 text-sm text-muted">{t("order.partialShip")}</p>
+        ) : null}
       </div>
     </Shell>
   );

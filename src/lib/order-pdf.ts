@@ -114,7 +114,8 @@ export async function buildOrderPdf(o: Order): Promise<Uint8Array> {
   y -= 14;
 
   for (const item of o.items) {
-    const nameLines = wrap(item.name, regular, 9, cols[1].w - 6);
+    const label = item.preorder ? `${item.name} (ENNAKKO)` : item.name;
+    const nameLines = wrap(label, regular, 9, cols[1].w - 6);
     const rowH = Math.max(14, nameLines.length * 11);
     if (y - rowH < 80) break;
     page.drawText(item.sku, { x: cols[0].x, y, size: 8, font: regular, color: MUTED });
@@ -145,6 +146,17 @@ export async function buildOrderPdf(o: Order): Promise<Uint8Array> {
     page.drawText(label, { x: left + 300, y, size: isGrand ? 11 : 9, font: f, color: INK });
     page.drawText(val, { x: right - f.widthOfTextAtSize(val, isGrand ? 11 : 9), y, size: isGrand ? 11 : 9, font: f, color: INK });
     y -= isGrand ? 16 : 14;
+  }
+
+  if (o.items.some((i) => i.preorder)) {
+    y -= 10;
+    const note =
+      "ENNAKKO: Tilauksella on tuotteita jotka saapuvat varastoon myöhemmin. Varastossa olevat tuotteet lähetetään osatoimituksena heti.";
+    for (const ln of wrap(note, regular, 8, right - left)) {
+      if (y < 56) break;
+      page.drawText(ln, { x: left, y, size: 8, font: regular, color: ACCENT });
+      y -= 11;
+    }
   }
 
   if (o.notes) {

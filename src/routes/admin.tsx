@@ -23,6 +23,7 @@ import {
   setCustomerRole,
   setOrderStatus,
   getSettings,
+  sendTestEmail,
 } from "@/lib/server/commerce";
 import { formatEur } from "@/lib/utils";
 import { downloadCsv, stamp } from "@/lib/csv";
@@ -131,7 +132,9 @@ function Overview() {
             <p className="font-medium">{e.subject}</p>
             <p className="text-xs text-muted">
               {e.to_address} · {String(e.created_at).slice(0, 16)}
+              {e.status ? ` · ${e.status}` : ""}
             </p>
+            {e.error ? <p className="mt-1 text-xs text-accent">{e.error}</p> : null}
           </li>
         ))}
       </ul>
@@ -534,6 +537,17 @@ function SettingsAdmin() {
         <Input value={form.companyName} onChange={(e) => setForm({ ...form, companyName: e.target.value })} />
       </Field>
       <Button type="submit">{t("admin.save")}</Button>
+      <Button
+        type="button"
+        variant="secondary"
+        onClick={() => {
+          void sendTestEmail()
+            .then((r) => toast.message(t("admin.emailTestOk", { n: r.to })))
+            .catch((err) => toast.message(err instanceof Error ? err.message : t("admin.emailTestFail")));
+        }}
+      >
+        {t("admin.emailTest")}
+      </Button>
     </form>
   );
 }
