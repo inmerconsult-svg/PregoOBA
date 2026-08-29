@@ -72,6 +72,7 @@ export function OrderList({
                 variant="secondary"
                 disabled={busyId === o.id}
                 onClick={(e) => {
+                  e.preventDefault();
                   e.stopPropagation();
                   setBusyId(o.id);
                   void downloadOrderPdf(o).finally(() => setBusyId(null));
