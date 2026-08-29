@@ -543,7 +543,7 @@ export const sendTestEmail = createServerFn({ method: "POST" })
       error: sent.error,
     });
     if (!sent.ok) throw new Error(sent.error);
-    return { ok: true, to };
+    return { ok: true, to, from: sent.from };
   });
 
 export const completeRegistration = createServerFn({ method: "POST" })

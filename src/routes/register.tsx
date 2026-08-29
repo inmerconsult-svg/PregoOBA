@@ -26,6 +26,11 @@ function Register() {
     e.preventDefault();
     setBusy(true);
     setError(null);
+    try {
+      await authClient.signOut();
+    } catch {
+      /* ei sessiota */
+    }
     const { error: err } = await authClient.signUp.email({
       email: form.email,
       password: form.password,

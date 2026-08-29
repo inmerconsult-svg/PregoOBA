@@ -1,6 +1,10 @@
-function envVar(name: string): string {
-  const g = globalThis as { process?: { env?: Record<string, string | undefined> } };
-  return (g.process?.env?.[name] ?? "").trim();
+function resendApiKey(): string {
+  return String(process.env.RESEND_API_KEY ?? "").trim();
+}
+
+function orderEmailFrom(): string {
+  const from = String(process.env.ORDER_EMAIL_FROM ?? "").trim();
+  return from || "Prego B2B <prego.tilaukset@merconsult.fi>";
 }
 
 export function textToHtml(text: string): string {
@@ -35,15 +39,15 @@ export async function sendResendEmail(input: {
   text: string;
   html?: string;
   attachments?: { filename: string; content: string }[];
-}): Promise<{ ok: boolean; error: string }> {
-  const key = envVar("RESEND_API_KEY");
-  if (!key) return { ok: false, error: "RESEND_API_KEY puuttuu Vercelistä" };
-  const from = envVar("ORDER_EMAIL_FROM") || "Prego B2B <onboarding@resend.dev>";
+}): Promise<{ ok: boolean; error: string; from: string }> {
+  const key = resendApiKey();
+  const from = orderEmailFrom();
+  if (!key) return { ok: false, error: "RESEND_API_KEY puuttuu Vercelistä", from };
   const to = parseTo(input.to);
-  if (!to.length) return { ok: false, error: "Ei vastaanottajaa" };
+  if (!to.length) return { ok: false, error: "Ei vastaanottajaa", from };
   const payload: Record<string, unknown> = {
     from,
-    to,
+    to: to.length === 1 ? to[0] : to,
     subject: input.subject,
     text: input.text,
     html: input.html || textToHtml(input.text),
@@ -52,16 +56,16 @@ export async function sendResendEmail(input: {
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${key}`,
+      Authorization: "Bearer " + key,
       "Content-Type": "application/json",
     },
     body: JSON.stringify(payload),
   });
   const json = (await res.json().catch(() => ({}))) as { message?: string; name?: string };
-  if (res.ok) return { ok: true, error: "" };
-  const error = (json.message || json.name || `Resend ${res.status}`) + " (from " + from + " → " + to.join(", ") + ")";
+  if (res.ok) return { ok: true, error: "", from };
+  const error = (json.message || json.name || "Resend " + res.status) + " (from " + from + " → " + to.join(", ") + ")";
   console.error("[prego-email]", res.status, error);
-  return { ok: false, error };
+  return { ok: false, error, from };
 }
 
 export async function sendSignupNotice(input: {
