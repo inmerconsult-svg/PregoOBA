@@ -16,10 +16,12 @@ import { Route as CartRouteImport } from './routes/cart'
 import { Route as CatalogRouteImport } from './routes/catalog'
 import { Route as CheckoutRouteImport } from './routes/checkout'
 import { Route as ContactRouteImport } from './routes/contact'
+import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as OrdersRouteImport } from './routes/orders'
 import { Route as PendingRouteImport } from './routes/pending'
 import { Route as RegisterRouteImport } from './routes/register'
+import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as OrdersIdRouteImport } from './routes/orders.$id'
 import { Route as ProductSkuRouteImport } from './routes/product.$sku'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
@@ -60,6 +62,11 @@ const ContactRoute = ContactRouteImport.update({
   path: '/contact',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
+  id: '/forgot-password',
+  path: '/forgot-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
@@ -78,6 +85,11 @@ const PendingRoute = PendingRouteImport.update({
 const RegisterRoute = RegisterRouteImport.update({
   id: '/register',
   path: '/register',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ResetPasswordRoute = ResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
   getParentRoute: () => rootRouteImport,
 } as any)
 const OrdersIdRoute = OrdersIdRouteImport.update({
@@ -109,10 +121,12 @@ export interface FileRoutesByFullPath {
   '/catalog': typeof CatalogRoute
   '/checkout': typeof CheckoutRoute
   '/contact': typeof ContactRoute
+  '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/orders': typeof OrdersRouteWithChildren
   '/pending': typeof PendingRoute
   '/register': typeof RegisterRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/orders/$id': typeof OrdersIdRoute
   '/product/$sku': typeof ProductSkuRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -126,10 +140,12 @@ export interface FileRoutesByTo {
   '/catalog': typeof CatalogRoute
   '/checkout': typeof CheckoutRoute
   '/contact': typeof ContactRoute
+  '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/orders': typeof OrdersRouteWithChildren
   '/pending': typeof PendingRoute
   '/register': typeof RegisterRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/orders/$id': typeof OrdersIdRoute
   '/product/$sku': typeof ProductSkuRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -144,10 +160,12 @@ export interface FileRoutesById {
   '/catalog': typeof CatalogRoute
   '/checkout': typeof CheckoutRoute
   '/contact': typeof ContactRoute
+  '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/orders': typeof OrdersRouteWithChildren
   '/pending': typeof PendingRoute
   '/register': typeof RegisterRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/orders/$id': typeof OrdersIdRoute
   '/product/$sku': typeof ProductSkuRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -163,10 +181,12 @@ export interface FileRouteTypes {
     | '/catalog'
     | '/checkout'
     | '/contact'
+    | '/forgot-password'
     | '/login'
     | '/orders'
     | '/pending'
     | '/register'
+    | '/reset-password'
     | '/orders/$id'
     | '/product/$sku'
     | '/api/auth/$'
@@ -180,10 +200,12 @@ export interface FileRouteTypes {
     | '/catalog'
     | '/checkout'
     | '/contact'
+    | '/forgot-password'
     | '/login'
     | '/orders'
     | '/pending'
     | '/register'
+    | '/reset-password'
     | '/orders/$id'
     | '/product/$sku'
     | '/api/auth/$'
@@ -197,10 +219,12 @@ export interface FileRouteTypes {
     | '/catalog'
     | '/checkout'
     | '/contact'
+    | '/forgot-password'
     | '/login'
     | '/orders'
     | '/pending'
     | '/register'
+    | '/reset-password'
     | '/orders/$id'
     | '/product/$sku'
     | '/api/auth/$'
@@ -215,10 +239,12 @@ export interface RootRouteChildren {
   CatalogRoute: typeof CatalogRoute
   CheckoutRoute: typeof CheckoutRoute
   ContactRoute: typeof ContactRoute
+  ForgotPasswordRoute: typeof ForgotPasswordRoute
   LoginRoute: typeof LoginRoute
   OrdersRoute: typeof OrdersRouteWithChildren
   PendingRoute: typeof PendingRoute
   RegisterRoute: typeof RegisterRoute
+  ResetPasswordRoute: typeof ResetPasswordRoute
   ProductSkuRoute: typeof ProductSkuRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiDatasheetsFileRoute: typeof ApiDatasheetsFileRoute
@@ -275,6 +301,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ContactRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/forgot-password': {
+      id: '/forgot-password'
+      path: '/forgot-password'
+      fullPath: '/forgot-password'
+      preLoaderRoute: typeof ForgotPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/login': {
       id: '/login'
       path: '/login'
@@ -301,6 +334,13 @@ declare module '@tanstack/react-router' {
       path: '/register'
       fullPath: '/register'
       preLoaderRoute: typeof RegisterRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reset-password': {
+      id: '/reset-password'
+      path: '/reset-password'
+      fullPath: '/reset-password'
+      preLoaderRoute: typeof ResetPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/orders/$id': {
@@ -353,10 +393,12 @@ const rootRouteChildren: RootRouteChildren = {
   CatalogRoute: CatalogRoute,
   CheckoutRoute: CheckoutRoute,
   ContactRoute: ContactRoute,
+  ForgotPasswordRoute: ForgotPasswordRoute,
   LoginRoute: LoginRoute,
   OrdersRoute: OrdersRouteWithChildren,
   PendingRoute: PendingRoute,
   RegisterRoute: RegisterRoute,
+  ResetPasswordRoute: ResetPasswordRoute,
   ProductSkuRoute: ProductSkuRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiDatasheetsFileRoute: ApiDatasheetsFileRoute,

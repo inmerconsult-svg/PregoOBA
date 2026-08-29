@@ -55,13 +55,18 @@ export async function sendPasswordResetMail(email: string, url: string) {
     "",
     "Prego / Suomen 585 Oy",
   ].join("\n");
-  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/></head><body style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.45;color:#222">
-<p>Hei,</p>
-<p>Pyysit uutta salasanaa Prego B2B -portaaliin. Avaa linkki (voimassa rajoitetun ajan) ja aseta uusi salasana:</p>
-<p><a href="${url.replace(/"/g, """)}">${url.replace(/</g, "<")}</a></p>
-<p>Jos et pyytänyt tätä, voit jättää viestin huomiotta.</p>
-<p>Prego / Suomen 585 Oy</p>
-</body></html>`;
+  const safeUrl = encodeURI(url);
+  const html =
+    "<!DOCTYPE html><html><head><meta charset=\"utf-8\"/></head><body style=\"font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.45;color:#222\">" +
+    "<p>Hei,</p>" +
+    "<p>Pyysit uutta salasanaa Prego B2B -portaaliin. Avaa linkki (voimassa rajoitetun ajan) ja aseta uusi salasana:</p>" +
+    "<p><a href=\"" +
+    safeUrl +
+    "\">" +
+    safeUrl +
+    "</a></p>" +
+    "<p>Jos et pyyt\u00e4nyt t\u00e4t\u00e4, voit j\u00e4tt\u00e4\u00e4 viestin huomiotta.</p>" +
+    "<p>Prego / Suomen 585 Oy</p></body></html>";
   const sent = await sendResendEmail({
     to: email,
     subject: "Prego B2B: salasanan vaihto",
