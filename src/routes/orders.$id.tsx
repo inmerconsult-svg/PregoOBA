@@ -7,7 +7,6 @@ import { Button } from "@/components/ui";
 import { RedirectToSignIn } from "@/lib/auth/gates";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { getOrder } from "@/lib/server/commerce";
-import { downloadOrderPdf } from "@/lib/order-pdf";
 import { formatEur } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
 
@@ -64,7 +63,9 @@ function OrderDetail() {
             disabled={pdfBusy}
             onClick={() => {
               setPdfBusy(true);
-              void downloadOrderPdf(o).finally(() => setPdfBusy(false));
+              void import("@/lib/order-pdf")
+                .then((m) => m.downloadOrderPdf(o))
+                .finally(() => setPdfBusy(false));
             }}
           >
             <FileDown className="size-4" />

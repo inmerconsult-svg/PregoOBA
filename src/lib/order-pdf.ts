@@ -33,21 +33,23 @@ export function orderPdfFilename(o: Order): string {
   return `Prego-tilaus-${o.orderNo}-${company}.pdf`;
 }
 
+async function publicOrigin(): Promise<string> {
+  if (typeof window !== "undefined") return window.location.origin;
+  const g = globalThis as { process?: { env?: Record<string, string | undefined> } };
+  const env = g.process?.env ?? {};
+  const explicit = (env.BETTER_AUTH_URL || env.VITE_APP_URL || "").trim().replace(/\/$/, "");
+  if (explicit) return explicit;
+  const vercel = (env.VERCEL_PROJECT_PRODUCTION_URL || env.VERCEL_URL || "").trim().replace(/\/$/, "");
+  if (vercel) return vercel.startsWith("http") ? vercel : `https://${vercel}`;
+  return "https://prego.585.fi";
+}
+
 async function loadFontBytes(): Promise<{ regular: Uint8Array; bold: Uint8Array } | null> {
   try {
-    if (typeof window === "undefined") {
-      const { readFile } = await import("node:fs/promises");
-      const { join } = await import("node:path");
-      const root = process.cwd();
-      const [reg, bold] = await Promise.all([
-        readFile(join(root, "public/fonts/LiberationSans-Regular.ttf")),
-        readFile(join(root, "public/fonts/LiberationSans-Bold.ttf")),
-      ]);
-      return { regular: new Uint8Array(reg), bold: new Uint8Array(bold) };
-    }
+    const origin = await publicOrigin();
     const [regRes, boldRes] = await Promise.all([
-      fetch("/fonts/LiberationSans-Regular.ttf"),
-      fetch("/fonts/LiberationSans-Bold.ttf"),
+      fetch(`${origin}/fonts/LiberationSans-Regular.ttf`),
+      fetch(`${origin}/fonts/LiberationSans-Bold.ttf`),
     ]);
     if (!regRes.ok || !boldRes.ok) return null;
     return {

@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { ChevronDown, FileDown } from "lucide-react";
 import { Button } from "@/components/ui";
-import { downloadOrderPdf } from "@/lib/order-pdf";
 import { formatEur } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
 import type { Order } from "@/lib/types";
@@ -75,7 +74,9 @@ export function OrderList({
                   e.preventDefault();
                   e.stopPropagation();
                   setBusyId(o.id);
-                  void downloadOrderPdf(o).finally(() => setBusyId(null));
+                  void import("@/lib/order-pdf")
+                    .then((m) => m.downloadOrderPdf(o))
+                    .finally(() => setBusyId(null));
                 }}
               >
                 <FileDown className="size-4" />
