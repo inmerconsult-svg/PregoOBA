@@ -34,25 +34,28 @@ export async function sendResendEmail(input: {
   subject: string;
   text: string;
   html?: string;
+  attachments?: { filename: string; content: string }[];
 }): Promise<{ ok: boolean; error: string }> {
   const key = envVar("RESEND_API_KEY");
-  if (!key) return { ok: false, error: "RESEND_API_KEY puuttuu" };
+  if (!key) return { ok: false, error: "RESEND_API_KEY puuttuu Vercelistä" };
   const from = envVar("ORDER_EMAIL_FROM") || "Prego B2B <onboarding@resend.dev>";
   const to = parseTo(input.to);
   if (!to.length) return { ok: false, error: "Ei vastaanottajaa" };
+  const payload: Record<string, unknown> = {
+    from,
+    to,
+    subject: input.subject,
+    text: input.text,
+    html: input.html || textToHtml(input.text),
+  };
+  if (input.attachments?.length) payload.attachments = input.attachments;
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${key}`,
-      "Content-Type": "application/json; charset=utf-8",
+      "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      from,
-      to,
-      subject: input.subject,
-      text: input.text,
-      html: input.html || textToHtml(input.text),
-    }),
+    body: JSON.stringify(payload),
   });
   const json = (await res.json().catch(() => ({}))) as { message?: string; name?: string };
   if (res.ok) return { ok: true, error: "" };

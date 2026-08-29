@@ -4,8 +4,7 @@ import { authMiddleware } from "@/lib/auth/middleware";
 import { mapProductRow } from "@/lib/catalog-helpers";
 import type { Order, OrderItem, Profile } from "@/lib/types";
 import { MIN_ORDER_NET, meetsMinOrder } from "@/lib/commerce-rules";
-import { buildOrderPdf, orderPdfFilename } from "@/lib/order-pdf";
-import { textToHtml, sendSignupNotice, sendResendEmail } from "@/lib/server/mail";
+import { sendSignupNotice, sendResendEmail, textToHtml } from "@/lib/server/mail";
 
 function mapProfile(row: Record<string, unknown>): Profile {
   return {
@@ -252,6 +251,7 @@ export const submitOrder = createServerFn({ method: "POST" })
     ].join("\n");
     let pdf: { filename: string; bytes: Uint8Array } | undefined;
     try {
+      const { buildOrderPdf, orderPdfFilename } = await import("@/lib/order-pdf");
       const order = await loadOrder(orderId, context.userId, true);
       if (order) {
         pdf = { filename: orderPdfFilename(order), bytes: await buildOrderPdf(order) };
@@ -266,52 +266,44 @@ export const submitOrder = createServerFn({ method: "POST" })
       text: body,
       pdf,
     });
-    await sql`
-      insert into email_log (order_id, to_address, subject, body, status, error)
-      values (
-        ${orderId},
-        ${to},
-        ${"Prego B2B tilaus " + orderNo},
-        ${body},
-        ${sent.ok ? "sent" : "failed"},
-        ${sent.error}
-      )
-    `;
+    await logEmail(sql, {
+      orderId,
+      to,
+      subject: "Prego B2B tilaus " + orderNo,
+      body,
+      ok: sent.ok,
+      error: sent.error,
+    });
     return { orderId, orderNo };
   });
 
-function envVar(name: string): string {
-  const g = globalThis as { process?: { env?: Record<string, string | undefined> } };
-  return (g.process?.env?.[name] ?? "").trim();
-}
-
-function parseEmails(raw: string): string[] {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const part of raw.split(/[;,]/)) {
-    const email = part.trim();
-    const key = email.toLowerCase();
-    if (!email || !email.includes("@") || seen.has(key)) continue;
-    seen.add(key);
-    out.push(email);
+async function logEmail(
+  sql: Awaited<ReturnType<typeof getSql>>,
+  row: { orderId: number | null; to: string; subject: string; body: string; ok: boolean; error: string },
+) {
+  try {
+    await sql`
+      insert into email_log (order_id, to_address, subject, body, status, error)
+      values (
+        ${row.orderId},
+        ${row.to},
+        ${row.subject},
+        ${row.body},
+        ${row.ok ? "sent" : "failed"},
+        ${row.error || ""}
+      )
+    `;
+  } catch (err) {
+    console.error("[prego-email-log]", err);
+    try {
+      await sql`
+        insert into email_log (order_id, to_address, subject, body)
+        values (${row.orderId}, ${row.to}, ${row.subject}, ${row.body})
+      `;
+    } catch (err2) {
+      console.error("[prego-email-log-fallback]", err2);
+    }
   }
-  return out;
-}
-
-async function resendSend(key: string, payload: Record<string, unknown>): Promise<{ ok: boolean; error: string }> {
-  const res = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${key}`,
-      "Content-Type": "application/json; charset=utf-8",
-    },
-    body: JSON.stringify(payload),
-  });
-  const json = (await res.json().catch(() => ({}))) as { message?: string; name?: string };
-  if (res.ok) return { ok: true, error: "" };
-  const error = json.message || json.name || `Resend ${res.status}`;
-  console.error("[prego-email]", res.status, error);
-  return { ok: false, error };
 }
 
 async function sendOrderEmail(input: {
@@ -321,46 +313,37 @@ async function sendOrderEmail(input: {
   text: string;
   pdf?: { filename: string; bytes: Uint8Array };
 }): Promise<{ ok: boolean; error: string }> {
-  const key = envVar("RESEND_API_KEY");
-  if (!key) return { ok: false, error: "RESEND_API_KEY puuttuu Vercelistä (Redeploy env-lisäyksen jälkeen)." };
-  const from = envVar("ORDER_EMAIL_FROM") || "Prego B2B <onboarding@resend.dev>";
-  const to = parseEmails(input.to);
-  const cc = parseEmails(input.cc).filter((e) => !to.some((t) => t.toLowerCase() === e.toLowerCase()));
-  if (!to.length && !cc.length) return { ok: false, error: "Ei vastaanottajaa (admin → tilausten sähköposti)." };
-
   const attachments = input.pdf
     ? [{ filename: input.pdf.filename, content: Buffer.from(input.pdf.bytes).toString("base64") }]
     : undefined;
-
   const errors: string[] = [];
   let anyOk = false;
-
-  if (to.length) {
-    const first = await resendSend(key, {
-      from,
-      to,
+  if (input.to.includes("@")) {
+    const first = await sendResendEmail({
+      to: input.to,
       subject: input.subject,
       text: input.text,
       html: textToHtml(input.text),
       attachments,
     });
     if (first.ok) anyOk = true;
-    else errors.push(`myynti (${to.join(", ")}): ${first.error}`);
+    else errors.push("myynti: " + first.error);
   }
-
-  if (cc.length) {
-    const copy = await resendSend(key, {
-      from,
+  const cc = input.cc.trim();
+  if (cc.includes("@") && cc.toLowerCase() !== input.to.trim().toLowerCase()) {
+    const copy = await sendResendEmail({
       to: cc,
-      subject: `Tilausvahvistus: ${input.subject}`,
+      subject: "Tilausvahvistus: " + input.subject,
       text: input.text,
       html: textToHtml(input.text),
       attachments,
     });
     if (copy.ok) anyOk = true;
-    else errors.push(`asiakas (${cc.join(", ")}): ${copy.error}`);
+    else errors.push("asiakas: " + copy.error);
   }
-
+  if (!input.to.includes("@") && !cc.includes("@")) {
+    return { ok: false, error: "Ei vastaanottajaa (admin → tilausten sähköposti)." };
+  }
   return { ok: anyOk, error: errors.join(" | ") };
 }
 
@@ -551,17 +534,14 @@ export const sendTestEmail = createServerFn({ method: "POST" })
       subject: "Prego B2B testiviesti",
       text: "Tämä on testiviesti Prego B2B -portaalista. Jos näet tämän, Resend toimii ja osoite on oikein.",
     });
-    await sql`
-      insert into email_log (order_id, to_address, subject, body, status, error)
-      values (
-        null,
-        ${to},
-        ${"Prego B2B testiviesti"},
-        ${sent.error || "ok"},
-        ${sent.ok ? "sent" : "failed"},
-        ${sent.error || ""}
-      )
-    `;
+    await logEmail(sql, {
+      orderId: null,
+      to,
+      subject: "Prego B2B testiviesti",
+      body: sent.error || "ok",
+      ok: sent.ok,
+      error: sent.error,
+    });
     if (!sent.ok) throw new Error(sent.error);
     return { ok: true, to };
   });
@@ -619,17 +599,14 @@ export const completeRegistration = createServerFn({ method: "POST" })
       phone: data.phone || profile.phone,
     };
     const sent = await sendSignupNotice(payload);
-    await sql`
-      insert into email_log (order_id, to_address, subject, body, status, error)
-      values (
-        null,
-        ${`${to}; ${payload.applicantEmail}`},
-        ${"Prego B2B: uusi tili"},
-        ${`Yritys: ${payload.companyName}\nEmail: ${payload.applicantEmail}`},
-        ${sent.ok ? "sent" : "failed"},
-        ${sent.error || ""}
-      )
-    `;
+    await logEmail(sql, {
+      orderId: null,
+      to: `${to}; ${payload.applicantEmail}`,
+      subject: "Prego B2B: uusi tili",
+      body: `Yritys: ${payload.companyName}\nEmail: ${payload.applicantEmail}`,
+      ok: sent.ok,
+      error: sent.error,
+    });
     if (!sent.ok) console.error("[prego-signup-mail]", sent.error);
     return { ok: true, mailed: sent.ok, mailError: sent.error };
   });
@@ -663,17 +640,14 @@ export const notifyNewRegistration = createServerFn({ method: "POST" })
       phone: data.phone || profile?.phone || "",
     };
     const sent = await sendSignupNotice(payload);
-    await sql`
-      insert into email_log (order_id, to_address, subject, body, status, error)
-      values (
-        null,
-        ${to},
-        ${"Prego B2B: uusi tili"},
-        ${`Yritys: ${payload.companyName}\nEmail: ${payload.applicantEmail}`},
-        ${sent.ok ? "sent" : "failed"},
-        ${sent.error || ""}
-      )
-    `;
+    await logEmail(sql, {
+      orderId: null,
+      to,
+      subject: "Prego B2B: uusi tili",
+      body: `Yritys: ${payload.companyName}\nEmail: ${payload.applicantEmail}`,
+      ok: sent.ok,
+      error: sent.error,
+    });
     if (!sent.ok) {
       console.error("[prego-signup-mail]", sent.error);
       throw new Error(sent.error);
