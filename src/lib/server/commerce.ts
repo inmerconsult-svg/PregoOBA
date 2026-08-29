@@ -4,6 +4,7 @@ import { authMiddleware } from "@/lib/auth/middleware";
 import { mapProductRow } from "@/lib/catalog-helpers";
 import type { Order, OrderItem, Profile } from "@/lib/types";
 import { MIN_ORDER_NET, meetsMinOrder } from "@/lib/commerce-rules";
+import { buildOrderPdf, orderPdfFilename } from "@/lib/order-pdf";
 
 function mapProfile(row: Record<string, unknown>): Profile {
   return {
@@ -246,12 +247,23 @@ export const submitOrder = createServerFn({ method: "POST" })
         ? "\nENNAKKO: Tilauksella on tuotteita jotka saapuvat varastoon myöhemmin. Varastossa olevat tuotteet lähetetään osatoimituksena heti."
         : "",
       data.notes ? `\nViesti:\n${data.notes}` : "",
+      "\nTilausvahvistus PDF on liitteenä.",
     ].join("\n");
+    let pdf: { filename: string; bytes: Uint8Array } | undefined;
+    try {
+      const order = await loadOrder(orderId, context.userId, true);
+      if (order) {
+        pdf = { filename: orderPdfFilename(order), bytes: await buildOrderPdf(order) };
+      }
+    } catch (err) {
+      console.error("[prego-pdf]", err);
+    }
     const sent = await sendOrderEmail({
       to,
       cc: profile.email,
       subject: `Prego B2B tilaus ${orderNo}`,
       text: body,
+      pdf,
     });
     await sql`
       insert into email_log (order_id, to_address, subject, body, status, error)
@@ -306,27 +318,47 @@ async function sendOrderEmail(input: {
   cc: string;
   subject: string;
   text: string;
+  pdf?: { filename: string; bytes: Uint8Array };
 }): Promise<{ ok: boolean; error: string }> {
   const key = envVar("RESEND_API_KEY");
   if (!key) return { ok: false, error: "RESEND_API_KEY puuttuu Vercelistä (Redeploy env-lisäyksen jälkeen)." };
   const from = envVar("ORDER_EMAIL_FROM") || "Prego B2B <onboarding@resend.dev>";
   const to = parseEmails(input.to);
-  if (!to.length) return { ok: false, error: "Ei vastaanottajaa (admin → tilausten sähköposti)." };
   const cc = parseEmails(input.cc).filter((e) => !to.some((t) => t.toLowerCase() === e.toLowerCase()));
+  if (!to.length && !cc.length) return { ok: false, error: "Ei vastaanottajaa (admin → tilausten sähköposti)." };
 
-  const first = await resendSend(key, { from, to, subject: input.subject, text: input.text });
-  if (!first.ok) return first;
+  const attachments = input.pdf
+    ? [{ filename: input.pdf.filename, content: Buffer.from(input.pdf.bytes).toString("base64") }]
+    : undefined;
+
+  const errors: string[] = [];
+  let anyOk = false;
+
+  if (to.length) {
+    const first = await resendSend(key, {
+      from,
+      to,
+      subject: input.subject,
+      text: input.text,
+      attachments,
+    });
+    if (first.ok) anyOk = true;
+    else errors.push(`myynti (${to.join(", ")}): ${first.error}`);
+  }
 
   if (cc.length) {
     const copy = await resendSend(key, {
       from,
       to: cc,
-      subject: `Kopio: ${input.subject}`,
+      subject: `Tilausvahvistus: ${input.subject}`,
       text: input.text,
+      attachments,
     });
-    if (!copy.ok) return { ok: true, error: `Myyntiin lähti, asiakaskopio ei: ${copy.error}` };
+    if (copy.ok) anyOk = true;
+    else errors.push(`asiakas (${cc.join(", ")}): ${copy.error}`);
   }
-  return { ok: true, error: "" };
+
+  return { ok: anyOk, error: errors.join(" | ") };
 }
 
 async function loadOrder(id: number, userId: string, admin: boolean): Promise<Order | null> {

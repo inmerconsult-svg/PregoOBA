@@ -57,6 +57,11 @@ function Login() {
               <Button type="submit" className="w-full" disabled={busy}>
                 {t("auth.signin")}
               </Button>
+              <p className="text-center text-sm">
+                <Link to="/forgot-password" className="text-muted underline hover:text-ink">
+                  {t("auth.forgot")}
+                </Link>
+              </p>
             </form>
           ) : (
             <p className="mt-6 text-sm text-muted">Sign-in is disabled.</p>

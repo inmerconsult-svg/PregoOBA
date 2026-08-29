@@ -1,19 +1,18 @@
-import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
-import { toast } from "sonner";
+import { PDFDocument, StandardFonts, rgb, type PDFFont } from "pdf-lib";
 import type { Order } from "./types";
 
 const INK = rgb(0.08, 0.08, 0.08);
 const MUTED = rgb(0.42, 0.41, 0.39);
 const LINE = rgb(0.89, 0.87, 0.84);
 const ACCENT = rgb(0.88, 0.16, 0.09);
-
-type PdfFont = { widthOfTextAtSize: (t: string, s: number) => number };
+const PARTIAL =
+  "Tilauksella on tuotteita jotka saapuvat varastoon myöhemmin. Varastossa olevat tuotteet lähetetään osatoimituksena heti.";
 
 function money(n: number) {
   return `${n.toFixed(2).replace(".", ",")} EUR`;
 }
 
-function wrap(text: string, font: PdfFont, size: number, max: number) {
+function wrap(text: string, font: PDFFont, size: number, max: number) {
   const words = String(text || "").split(/\s+/);
   const lines: string[] = [];
   let cur = "";
@@ -34,43 +33,91 @@ export function orderPdfFilename(o: Order): string {
   return `Prego-tilaus-${o.orderNo}-${company}.pdf`;
 }
 
-async function embedFonts(doc: PDFDocument) {
+async function loadFontBytes(): Promise<{ regular: Uint8Array; bold: Uint8Array } | null> {
   try {
+    if (typeof window === "undefined") {
+      const { readFile } = await import("node:fs/promises");
+      const { join } = await import("node:path");
+      const root = process.cwd();
+      const [reg, bold] = await Promise.all([
+        readFile(join(root, "public/fonts/LiberationSans-Regular.ttf")),
+        readFile(join(root, "public/fonts/LiberationSans-Bold.ttf")),
+      ]);
+      return { regular: new Uint8Array(reg), bold: new Uint8Array(bold) };
+    }
     const [regRes, boldRes] = await Promise.all([
       fetch("/fonts/LiberationSans-Regular.ttf"),
       fetch("/fonts/LiberationSans-Bold.ttf"),
     ]);
-    if (regRes.ok && boldRes.ok) {
-      return {
-        regular: await doc.embedFont(await regRes.arrayBuffer()),
-        bold: await doc.embedFont(await boldRes.arrayBuffer()),
-      };
-    }
+    if (!regRes.ok || !boldRes.ok) return null;
+    return {
+      regular: new Uint8Array(await regRes.arrayBuffer()),
+      bold: new Uint8Array(await boldRes.arrayBuffer()),
+    };
   } catch {
-    /* use built-in fonts */
+    return null;
+  }
+}
+
+async function embedFonts(doc: PDFDocument) {
+  const bytes = await loadFontBytes();
+  if (bytes) {
+    return {
+      regular: await doc.embedFont(bytes.regular, { subset: true }),
+      bold: await doc.embedFont(bytes.bold, { subset: true }),
+      unicode: true,
+    };
   }
   return {
     regular: await doc.embedFont(StandardFonts.Helvetica),
     bold: await doc.embedFont(StandardFonts.HelveticaBold),
+    unicode: false,
   };
+}
+
+function safe(s: string, unicode: boolean) {
+  if (unicode) return String(s ?? "");
+  return String(s ?? "")
+    .replace(/ä/g, "a")
+    .replace(/ö/g, "o")
+    .replace(/å/g, "a")
+    .replace(/Ä/g, "A")
+    .replace(/Ö/g, "O")
+    .replace(/Å/g, "A");
 }
 
 export async function buildOrderPdf(o: Order): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
-  const { regular, bold } = await embedFonts(doc);
-  const page = doc.addPage([595.28, 841.89]);
-  const { width, height } = page.getSize();
-  const left = 48;
-  const right = width - 48;
-  let y = height - 48;
+  const { regular, bold, unicode } = await embedFonts(doc);
+  const S = (s: string) => safe(s, unicode);
 
-  const text = (s: string, x: number, yy: number, size: number, font: typeof regular, color = INK) => {
-    page.drawText(String(s ?? ""), { x, y: yy, size, font, color });
+  const size: [number, number] = [595.28, 841.89];
+  let page = doc.addPage(size);
+  const left = 48;
+  const right = size[0] - 48;
+  let y = size[1] - 48;
+
+  const ensure = (need: number) => {
+    if (y - need >= 56) return;
+    page.drawLine({ start: { x: left, y: 42 }, end: { x: right, y: 42 }, thickness: 0.6, color: LINE });
+    page.drawText(S("Myynti ja sivuston operointi: Suomen 585 Oy  |  Maahantuonti: Inbound Finland Oy"), {
+      x: left,
+      y: 28,
+      size: 7,
+      font: regular,
+      color: MUTED,
+    });
+    page = doc.addPage(size);
+    y = size[1] - 48;
+  };
+
+  const text = (s: string, x: number, yy: number, sz: number, font: PDFFont, color = INK) => {
+    page.drawText(S(s), { x, y: yy, size: sz, font, color });
   };
 
   text("PREGO B2B", left, y, 11, bold);
   const title = "TILAUS / ORDER";
-  text(title, right - bold.widthOfTextAtSize(title, 11), y, 11, bold, ACCENT);
+  text(title, right - bold.widthOfTextAtSize(S(title), 11), y, 11, bold, ACCENT);
   y -= 18;
   text(o.orderNo, left, y, 18, bold);
   const date = String(o.createdAt || "").slice(0, 16).replace("T", " ");
@@ -121,19 +168,23 @@ export async function buildOrderPdf(o: Order): Promise<Uint8Array> {
   text(cols[0].label, cols[0].x, y, 8, bold, MUTED);
   text(cols[1].label, cols[1].x, y, 8, bold, MUTED);
   for (const c of cols.slice(2)) {
-    text(c.label, c.x + c.w - bold.widthOfTextAtSize(c.label, 8), y, 8, bold, MUTED);
+    text(c.label, c.x + c.w - bold.widthOfTextAtSize(S(c.label), 8), y, 8, bold, MUTED);
   }
   y -= 6;
   page.drawLine({ start: { x: left, y }, end: { x: right, y }, thickness: 0.6, color: LINE });
   y -= 14;
 
   for (const item of o.items ?? []) {
-    const label = item.preorder ? `${item.name} (ENNAKKO)` : item.name;
-    const nameLines = wrap(label, regular, 9, cols[1].w - 6);
-    const rowH = Math.max(14, nameLines.length * 11);
-    if (y - rowH < 80) break;
+    const nameLines = wrap(S(item.name), regular, 9, cols[1].w - 6);
+    const extra = item.preorder ? 12 : 0;
+    const rowH = Math.max(16, nameLines.length * 11 + extra);
+    ensure(rowH + 8);
     text(item.sku, cols[0].x, y, 8, regular, MUTED);
     nameLines.forEach((ln, i) => text(ln, cols[1].x, y - i * 11, 9, regular));
+    if (item.preorder) {
+      const tagY = y - nameLines.length * 11;
+      text("(ENNAKKO)", cols[1].x, tagY, 8, bold, ACCENT);
+    }
     const qty = String(item.qty);
     text(qty, cols[2].x + cols[2].w - regular.widthOfTextAtSize(qty, 9), y, 9, regular);
     const unit = money(item.unitPrice);
@@ -144,6 +195,7 @@ export async function buildOrderPdf(o: Order): Promise<Uint8Array> {
   }
 
   y -= 8;
+  ensure(90);
   page.drawLine({ start: { x: left, y }, end: { x: right, y }, thickness: 0.6, color: LINE });
   y -= 18;
 
@@ -153,19 +205,19 @@ export async function buildOrderPdf(o: Order): Promise<Uint8Array> {
     ["Yhteensa", money(o.grandTotal)],
   ];
   for (const [label, val] of totals) {
+    ensure(18);
     const isGrand = label === "Yhteensa";
     const f = isGrand ? bold : regular;
     text(label, left + 300, y, isGrand ? 11 : 9, f);
-    text(val, right - f.widthOfTextAtSize(val, isGrand ? 11 : 9), y, isGrand ? 11 : 9, f);
+    text(val, right - f.widthOfTextAtSize(S(val), isGrand ? 11 : 9), y, isGrand ? 11 : 9, f);
     y -= isGrand ? 16 : 14;
   }
 
   if ((o.items ?? []).some((i) => i.preorder)) {
     y -= 10;
-    const note =
-      "ENNAKKO: Tilauksella on tuotteita jotka saapuvat varastoon myohemmin. Varastossa olevat tuotteet lahetetaan osatoimituksena heti.";
-    for (const ln of wrap(note, regular, 8, right - left)) {
-      if (y < 56) break;
+    ensure(40);
+    for (const ln of wrap(S(PARTIAL), regular, 8, right - left)) {
+      ensure(14);
       text(ln, left, y, 8, regular, ACCENT);
       y -= 11;
     }
@@ -173,23 +225,37 @@ export async function buildOrderPdf(o: Order): Promise<Uint8Array> {
 
   if (o.notes) {
     y -= 10;
+    ensure(28);
     text("Viesti", left, y, 8, bold, MUTED);
     y -= 13;
-    for (const ln of wrap(o.notes, regular, 9, right - left)) {
-      if (y < 56) break;
+    for (const ln of wrap(S(o.notes), regular, 9, right - left)) {
+      ensure(14);
       text(ln, left, y, 9, regular);
       y -= 12;
     }
   }
 
   page.drawLine({ start: { x: left, y: 42 }, end: { x: right, y: 42 }, thickness: 0.6, color: LINE });
-  text("Myynti ja sivuston operointi: Suomen 585 Oy  |  Maahantuonti: Inbound Finland Oy", left, 28, 7, regular, MUTED);
-  text("Hinnat EUR, alv 0 ellei toisin ilmoitettu. Tama on tilausvahvistus, ei lasku.", left, 18, 7, regular, MUTED);
+  page.drawText(S("Myynti ja sivuston operointi: Suomen 585 Oy  |  Maahantuonti: Inbound Finland Oy"), {
+    x: left,
+    y: 28,
+    size: 7,
+    font: regular,
+    color: MUTED,
+  });
+  page.drawText(S("Hinnat EUR, alv 0 ellei toisin ilmoitettu. Tama on tilausvahvistus, ei lasku."), {
+    x: left,
+    y: 18,
+    size: 7,
+    font: regular,
+    color: MUTED,
+  });
 
   return doc.save();
 }
 
 export async function downloadOrderPdf(o: Order) {
+  const { toast } = await import("sonner");
   try {
     const bytes = await buildOrderPdf(o);
     const blob = new Blob([bytes as BlobPart], { type: "application/pdf" });
