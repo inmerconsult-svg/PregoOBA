@@ -53,9 +53,21 @@ function Register() {
           language: lang,
         },
       });
-      await notifyNewRegistration();
     } catch {
       /* profile can be completed later */
+    }
+    try {
+      await notifyNewRegistration({
+        data: {
+          email: form.email,
+          displayName: form.name,
+          companyName: form.company,
+          vatNumber: form.vat,
+          phone: form.phone,
+        },
+      });
+    } catch (err) {
+      console.error("[prego-signup-mail]", err);
     }
     setBusy(false);
     void nav({ to: "/pending" });

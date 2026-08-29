@@ -5,7 +5,7 @@ import { mapProductRow } from "@/lib/catalog-helpers";
 import type { Order, OrderItem, Profile } from "@/lib/types";
 import { MIN_ORDER_NET, meetsMinOrder } from "@/lib/commerce-rules";
 import { buildOrderPdf, orderPdfFilename } from "@/lib/order-pdf";
-import { textToHtml } from "@/lib/server/mail";
+import { textToHtml, sendSignupNotice } from "@/lib/server/mail";
 
 function mapProfile(row: Record<string, unknown>): Profile {
   return {
@@ -551,52 +551,47 @@ export const sendTestEmail = createServerFn({ method: "POST" })
 
 export const notifyNewRegistration = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
-  .handler(async ({ context }) => {
+  .validator(
+    (d: {
+      email?: string;
+      displayName?: string;
+      companyName?: string;
+      vatNumber?: string;
+      phone?: string;
+    }) => d,
+  )
+  .handler(async ({ context, data }) => {
     const sql = await getSql();
     const profileRows = await sql<Record<string, unknown>>`
       select * from profiles where user_id = ${context.userId} limit 1
     `;
-    if (!profileRows[0]) return { ok: false };
-    const profile = mapProfile(profileRows[0]);
-    if (profile.role !== "pending") return { ok: true };
+    const profile = profileRows[0] ? mapProfile(profileRows[0]) : null;
+    if (profile?.role === "admin") return { ok: true, skipped: "admin" };
     const toRows = await sql<{ value: string }>`select value from settings where key = 'order_email'`;
     const to = toRows[0]?.value || "barmanol@gmail.com";
-    const adminBody = [
-      "Uusi yritystili odottaa hyväksyntää.",
-      "",
-      `Yritys: ${profile.companyName || "—"}`,
-      `Y-tunnus: ${profile.vatNumber || "—"}`,
-      `Yhteyshenkilö: ${profile.displayName}`,
-      `Sähköposti: ${profile.email}`,
-      `Puhelin: ${profile.phone || "—"}`,
-      "",
-      "Hyväksy asiakas: https://prego.585.fi/admin",
-    ].join("\n");
-    const adminSent = await sendOrderEmail({
-      to,
-      cc: "",
-      subject: `Prego B2B: uusi tili ${profile.companyName || profile.email}`,
-      text: adminBody,
-    });
+    const payload = {
+      adminTo: to,
+      applicantEmail: data.email || profile?.email || "",
+      displayName: data.displayName || profile?.displayName || "",
+      companyName: data.companyName || profile?.companyName || "",
+      vatNumber: data.vatNumber || profile?.vatNumber || "",
+      phone: data.phone || profile?.phone || "",
+    };
+    const sent = await sendSignupNotice(payload);
     await sql`
       insert into email_log (order_id, to_address, subject, body, status, error)
-      values (null, ${to}, ${"Prego B2B: uusi tili"}, ${adminBody}, ${adminSent.ok ? "sent" : "failed"}, ${adminSent.error})
+      values (
+        null,
+        ${to},
+        ${"Prego B2B: uusi tili"},
+        ${`Yritys: ${payload.companyName}\nEmail: ${payload.applicantEmail}`},
+        ${sent.ok ? "sent" : "failed"},
+        ${sent.error || ""}
+      )
     `;
-    if (profile.email) {
-      const userBody = [
-        `Hei ${profile.displayName || ""},`,
-        "",
-        "Kiitos Prego B2B -tilin avaamisesta.",
-        "Ylläpitäjä tarkistaa yrityksen tiedot. Hinnat ja tilaus avautuvat, kun tili on hyväksytty.",
-        "",
-        "Prego / Suomen 585 Oy",
-      ].join("\n");
-      await sendOrderEmail({
-        to: profile.email,
-        cc: "",
-        subject: "Prego B2B: tilisi odottaa hyväksyntää",
-        text: userBody,
-      });
+    if (!sent.ok) {
+      console.error("[prego-signup-mail]", sent.error);
+      throw new Error(sent.error);
     }
     return { ok: true };
   });

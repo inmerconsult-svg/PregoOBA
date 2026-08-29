@@ -1,6 +1,6 @@
 PREGO B2B — täydellinen kuvaus jatkokehitystä ja palautusta varten
 ==================================================================
-Päivitetty: 2026-08-29
+Päivitetty: 2026-08-29 (varmuuskopio uusittu, mail.ts-buildikorjaus, fontkit)
 Tämä tiedosto + zip-varmuuskopio riittävät siihen, että kuka tahansa
 ohjelmoija voi palauttaa ja jatkaa projektia ilman aiempaa taustaa.
 
@@ -258,9 +258,26 @@ Ei julkista /datasheets/-kansiota, koska PDF:issä on hintoja.
 --------------
 Resend. ORDER_EMAIL_FROM pitää olla varmennetun domainin osoite.
 merconsult.fi on varmennettu; 585.fi DKIM jäi kesken (cPanel).
-Tilausviesti: text + UTF-8 HTML + PDF-liite.
+Tilausviesti: text + UTF-8 HTML + PDF-liite (myynti ja asiakas erikseen).
 Salasanan palautus: src/lib/server/mail.ts sendPasswordResetMail
 sendResetPassword Better Authissa: src/lib/auth/server.ts
+
+Älä käytä HTML-entiteettejä (" yms.) merkkijonoissa mail.ts:ssä —
+Vite/rolldown kaataa Vercel-buildin. Käytä concat + encodeURI.
+
+
+16. TUNNETUT KUOPAT
+-------------------
+- Zip GitHubissa ≠ lähdekoodi. Vercel lukee kansiot.
+- .vercel commit = vanha sivu jää voimaan.
+- BETTER_AUTH_URL väärä domain = kirjautuminen ei toimi.
+- ORDER_EMAIL_FROM varmennetun domainin ulkopuolelta = Resend hylkää.
+- onboarding@resend.dev lähettää vain Resend-tilin omaan sähköpostiin.
+- pdf-lib TTF vaatii @pdf-lib/fontkit (package.json + lock).
+- Datasheetit private/, ei public/.
+- Neon-salasanaa ei saa commitoida.
+- mail.ts: merkkijono `/\"/g` + HTML-entiteetti rikkoo `npm run build`.
+- order-pdf.ts ei saa tuoda node:fs client-bundleen (fontit: fetch selaimessa, fs vain serverillä).
 
 
 14. MISSÄ KOODI MUUTTUU KUN…
