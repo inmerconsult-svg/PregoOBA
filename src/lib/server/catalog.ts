@@ -8,6 +8,20 @@ import seed from "@/data/products.json";
 
 type SeedItem = Product;
 
+const DATASHEET_SYNC_SKUS = new Set([
+  "PM021E",
+  "P351B",
+  "PB7072",
+  "PB7059",
+  "P951",
+  "P945",
+  "PM023",
+  "P6208",
+  "P124",
+  "P227",
+  "P8426D",
+]);
+
 function emptyish(value: unknown): boolean {
   if (value == null) return true;
   const s = String(value).trim();
@@ -50,9 +64,10 @@ async function seedIfEmpty() {
       await insertSeedProduct(sql, p);
       continue;
     }
-    const needImage = emptyish(row.image_url) && Boolean(p.imageUrl);
-    const needSheet = emptyish(row.datasheet_url) && Boolean(p.datasheetUrl);
-    const needFeat = emptyish(row.features_fi) && (p.featuresFi?.length ?? 0) > 0;
+    const force = DATASHEET_SYNC_SKUS.has(p.sku);
+    const needImage = force || (emptyish(row.image_url) && Boolean(p.imageUrl));
+    const needSheet = force || (emptyish(row.datasheet_url) && Boolean(p.datasheetUrl));
+    const needFeat = force || (emptyish(row.features_fi) && (p.featuresFi?.length ?? 0) > 0);
     if (!needImage && !needSheet && !needFeat) continue;
     await sql`
       update products set
@@ -67,7 +82,11 @@ async function seedIfEmpty() {
         name_en = case when ${needFeat} then ${p.nameEn} else name_en end,
         name_sv = case when ${needFeat} then ${p.nameSv} else name_sv end,
         name_no = case when ${needFeat} then ${p.nameNo} else name_no end,
-        name_et = case when ${needFeat} then ${p.nameEt} else name_et end
+        name_et = case when ${needFeat} then ${p.nameEt} else name_et end,
+        ean = case when ${force} then ${p.ean} else ean end,
+        net_price = case when ${force} then ${p.netPrice} else net_price end,
+        carton_qty = case when ${force} then ${p.cartonQty} else carton_qty end,
+        eta = case when ${force} then ${p.eta} else eta end
       where sku = ${p.sku}
     `;
   }

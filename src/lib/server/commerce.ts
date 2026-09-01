@@ -529,15 +529,17 @@ export const sendTestEmail = createServerFn({ method: "POST" })
     if (!to.includes("@")) {
       throw new Error("Tallenna tilausten sähköposti asetuksiin ennen testiä.");
     }
+    const stamp = new Date().toLocaleString("fi-FI", { timeZone: "Europe/Helsinki" });
+    const subject = "Prego B2B testiviesti " + stamp;
     const sent = await sendResendEmail({
       to,
-      subject: "Prego B2B testiviesti",
-      text: "Tämä on testiviesti Prego B2B -portaalista. Jos näet tämän, Resend toimii ja osoite on oikein.",
+      subject,
+      text: "Tämä on testiviesti Prego B2B -portaalista (" + stamp + "). Jos näet tämän, Resend toimii ja osoite on oikein.",
     });
     await logEmail(sql, {
       orderId: null,
       to,
-      subject: "Prego B2B testiviesti",
+      subject,
       body: sent.error || "ok",
       ok: sent.ok,
       error: sent.error,
