@@ -9,6 +9,7 @@ type CartState = {
   setQty: (sku: string, qty: number, carton: number) => void;
   remove: (sku: string) => void;
   clear: () => void;
+  replace: (lines: CartLine[]) => void;
 };
 
 export const useCart = create<CartState>()(
@@ -35,6 +36,7 @@ export const useCart = create<CartState>()(
       },
       remove: (sku) => set({ lines: get().lines.filter((l) => l.sku !== sku) }),
       clear: () => set({ lines: [] }),
+      replace: (lines) => set({ lines }),
     }),
     { name: "prego-cart" },
   ),

@@ -701,3 +701,54 @@ export const notifyNewRegistration = createServerFn({ method: "POST" })
     }
     return { ok: true };
   });
+
+async function ensureUserCarts(sql: Awaited<ReturnType<typeof getSql>>) {
+  await sql.query(
+    `create table if not exists user_carts (
+      user_id text primary key,
+      lines text not null default '[]',
+      updated_at timestamptz not null default now()
+    )`,
+  );
+}
+
+function cleanCartLines(lines: { sku: string; qty: number }[]) {
+  const bySku = new Map<string, number>();
+  for (const line of lines) {
+    const sku = String(line.sku || "").trim().toUpperCase();
+    const qty = Math.round(Number(line.qty));
+    if (!sku || !Number.isFinite(qty) || qty <= 0 || qty > 99999) continue;
+    bySku.set(sku, qty);
+  }
+  return [...bySku.entries()].map(([sku, qty]) => ({ sku, qty }));
+}
+
+export const loadCart = createServerFn({ method: "GET" })
+  .middleware([authMiddleware])
+  .handler(async ({ context }) => {
+    const sql = await getSql();
+    await ensureUserCarts(sql);
+    const rows = await sql<{ lines: string }>`select lines from user_carts where user_id = ${context.userId} limit 1`;
+    if (!rows[0]) return [] as { sku: string; qty: number }[];
+    try {
+      const parsed = JSON.parse(rows[0].lines) as { sku: string; qty: number }[];
+      return cleanCartLines(Array.isArray(parsed) ? parsed : []);
+    } catch {
+      return [] as { sku: string; qty: number }[];
+    }
+  });
+
+export const saveCart = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((lines: { sku: string; qty: number }[]) => lines)
+  .handler(async ({ context, data }) => {
+    const sql = await getSql();
+    await ensureUserCarts(sql);
+    const lines = cleanCartLines(data);
+    await sql`
+      insert into user_carts (user_id, lines, updated_at)
+      values (${context.userId}, ${JSON.stringify(lines)}, now())
+      on conflict (user_id) do update set lines = excluded.lines, updated_at = now()
+    `;
+    return { ok: true };
+  });

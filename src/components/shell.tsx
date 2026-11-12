@@ -1,23 +1,88 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { Menu, ShoppingBag, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { SignedIn, SignedOut } from "@/lib/auth/gates";
 import { useCurrentUser, useCurrentUserState } from "@/lib/auth/use-current-user";
 import { signOut } from "@/lib/auth/client";
 import { useI18n } from "@/lib/i18n";
 import { LANGS } from "@/lib/utils";
 import { useCart } from "@/store/cart";
-import { ensureProfile } from "@/lib/server/commerce";
+import { ensureProfile, loadCart, saveCart } from "@/lib/server/commerce";
 import type { Profile } from "@/lib/types";
 
 export function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-dvh flex-col bg-paper text-ink">
+      <CartSync />
       <Header />
       <main className="flex-1">{children}</main>
       <Footer />
     </div>
   );
+}
+
+function mergeCart(server: { sku: string; qty: number }[], local: { sku: string; qty: number }[]) {
+  const bySku = new Map<string, number>();
+  for (const line of server) bySku.set(line.sku, line.qty);
+  for (const line of local) {
+    const prev = bySku.get(line.sku) ?? 0;
+    bySku.set(line.sku, Math.max(prev, line.qty));
+  }
+  return [...bySku.entries()].map(([sku, qty]) => ({ sku, qty }));
+}
+
+function CartSync() {
+  const { user, isPending } = useCurrentUserState();
+  const userId = user?.id ?? null;
+  const lines = useCart((s) => s.lines);
+  const ready = useRef(false);
+  const lastUser = useRef<string | null>(null);
+  const [hydrated, setHydrated] = useState(useCart.persist.hasHydrated());
+
+  useEffect(() => useCart.persist.onFinishHydration(() => setHydrated(true)), []);
+
+  useEffect(() => {
+    if (!hydrated || isPending) return;
+    if (!userId) {
+      ready.current = false;
+      if (lastUser.current) {
+        lastUser.current = null;
+        useCart.getState().replace([]);
+      }
+      return;
+    }
+    if (lastUser.current === userId && ready.current) return;
+    let cancel = false;
+    const local = useCart.getState().lines;
+    void loadCart()
+      .then((server) => {
+        if (cancel) return;
+        const merged = mergeCart(server, local);
+        useCart.getState().replace(merged);
+        lastUser.current = userId;
+        ready.current = true;
+        if (JSON.stringify(merged) !== JSON.stringify(server)) {
+          void saveCart({ data: merged });
+        }
+      })
+      .catch(() => {
+        ready.current = true;
+        lastUser.current = userId;
+      });
+    return () => {
+      cancel = true;
+    };
+  }, [userId, isPending, hydrated]);
+
+  useEffect(() => {
+    if (!hydrated || !ready.current || !userId || lastUser.current !== userId) return;
+    const handle = setTimeout(() => {
+      void saveCart({ data: lines }).catch(() => undefined);
+    }, 400);
+    return () => clearTimeout(handle);
+  }, [lines, userId, hydrated]);
+
+  return null;
 }
 
 function Header() {

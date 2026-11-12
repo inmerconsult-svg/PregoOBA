@@ -4279,11 +4279,11 @@
   {
     "sku": "P1201",
     "ean": "6430037758195",
-    "nameFi": "Vedenkeitin lasi 1,2L 1500W",
-    "nameEn": "Kettle glass 1,2L 1500W",
-    "nameSv": "Vattenkokare glas 1,2L 1500W",
-    "nameNo": "Vannkoker glass 1,2L 1500W",
-    "nameEt": "Veekeetja klaas 1,2L 1500W",
+    "nameFi": "Lasi vedenkeitin 1,2 l 1500W",
+    "nameEn": "Glass kettle 1.2L 1500W",
+    "nameSv": "Vattenkokare i glas 1,2L 1500W",
+    "nameNo": "Vannkoker i glass 1,2L 1500W",
+    "nameEt": "Klaasist veekeetja 1,2L 1500W",
     "categoryCode": "101",
     "categoryFi": "Vedenkeittimet",
     "categoryEn": "Kettles",
@@ -4299,13 +4299,43 @@
     "backorder": 54,
     "eta": "30.9",
     "active": true,
-    "imageUrl": null,
-    "datasheetUrl": null,
-    "featuresFi": [],
-    "featuresEn": [],
-    "featuresSv": [],
-    "featuresNo": [],
-    "featuresEt": []
+    "imageUrl": "/images/products/P1201.jpg",
+    "datasheetUrl": "/datasheets/P1201.pdf",
+    "featuresFi": [
+      "1,2 l",
+      "Teho 1500W",
+      "Johdoton",
+      "Ruostumatonta terästä / lasi",
+      "Selkeä vesirajan merkkiasteikko"
+    ],
+    "featuresEn": [
+      "1.2 L",
+      "1500W",
+      "Cordless",
+      "Stainless steel / glass",
+      "Clear water level scale"
+    ],
+    "featuresSv": [
+      "1,2 L",
+      "1500W",
+      "Sladdlös",
+      "Rostfritt stål / glas",
+      "Tydlig vattennivåskala"
+    ],
+    "featuresNo": [
+      "1,2 L",
+      "1500W",
+      "Trådløs",
+      "Rustfritt stål / glass",
+      "Tydelig vannivåskala"
+    ],
+    "featuresEt": [
+      "1,2 L",
+      "1500W",
+      "Juhtmeta",
+      "Roostevaba teras / klaas",
+      "Selge veetaseme skaala"
+    ]
   },
   {
     "sku": "P238",
