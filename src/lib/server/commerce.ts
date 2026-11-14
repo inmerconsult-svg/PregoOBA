@@ -174,6 +174,9 @@ type CheckoutInput = {
   deliveryCity: string;
   deliveryCountry: string;
   onBehalfUserId?: string;
+  companyName?: string;
+  vatNumber?: string;
+  phone?: string;
 };
 
 function num(v: unknown): number {
@@ -200,8 +203,9 @@ export const submitOrder = createServerFn({ method: "POST" })
     if (!me) throw new Error("Profile missing");
     let profile = me;
     let onBehalf = false;
+    const owner = me.email.trim().toLowerCase() === "barmanol@gmail.com";
     if (data.onBehalfUserId && data.onBehalfUserId !== context.userId) {
-      if (me.role !== "admin") throw new Error("Forbidden");
+      if (!owner) throw new Error("Forbidden");
       const targetRows = await sql<Record<string, unknown>>`
         select * from profiles where user_id = ${data.onBehalfUserId} limit 1
       `;
@@ -239,6 +243,10 @@ export const submitOrder = createServerFn({ method: "POST" })
     const [{ n }] = await sql<{ n: number }>`select count(*)::int as n from orders`;
     const orderNo = `PREGO-${year}-${String((n ?? 0) + 1).padStart(5, "0")}`;
 
+    const companyName = data.companyName?.trim() || profile.companyName;
+    const vatNumber = data.vatNumber?.trim() || profile.vatNumber;
+    const phone = data.phone?.trim() || profile.phone;
+
     const inserted = await sql<{ id: number }>`
       insert into orders (
         order_no, user_id, status, company_name, vat_number, email, phone, po_number, notes,
@@ -246,8 +254,8 @@ export const submitOrder = createServerFn({ method: "POST" })
         reverse_charge, net_total, vat_rate, vat_total, grand_total,
         on_behalf, placed_by_name, placed_by_email
       ) values (
-        ${orderNo}, ${profile.userId}, 'submitted', ${profile.companyName}, ${profile.vatNumber},
-        ${profile.email}, ${profile.phone}, ${data.poNumber}, ${data.notes},
+        ${orderNo}, ${profile.userId}, 'submitted', ${companyName}, ${vatNumber},
+        ${profile.email}, ${phone}, ${data.poNumber}, ${data.notes},
         ${data.deliveryName}, ${data.deliveryAddress}, ${data.deliveryPostal}, ${data.deliveryCity},
         ${data.deliveryCountry}, ${data.reverseCharge}, ${netTotal}, ${vatRate}, ${vatTotal}, ${grand},
         ${onBehalf}, ${onBehalf ? me.displayName || me.email : ""}, ${onBehalf ? me.email : ""}
@@ -270,8 +278,8 @@ export const submitOrder = createServerFn({ method: "POST" })
     const body = [
       `Tilaus ${orderNo}`,
       behalfLine,
-      `Yritys: ${profile.companyName} (${profile.vatNumber})`,
-      `Yhteys: ${profile.displayName} <${profile.email}> ${profile.phone}`,
+      `Yritys: ${companyName} (${vatNumber})`,
+      `Yhteys: ${profile.displayName} <${profile.email}> ${phone}`,
       `Ostotilaus: ${data.poNumber || "—"}`,
       `Toimitus: ${data.deliveryName}, ${data.deliveryAddress}, ${data.deliveryPostal} ${data.deliveryCity}, ${data.deliveryCountry}`,
       data.reverseCharge ? "ALV: käännetty verovelvollisuus 0 %" : `ALV: ${vatRate} %`,

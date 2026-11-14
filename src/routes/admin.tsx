@@ -25,7 +25,6 @@ import {
   setOrderStatus,
   getSettings,
   sendTestEmail,
-  submitOrder,
 } from "@/lib/server/commerce";
 import { GROUPS } from "@/lib/catalog-helpers";
 import { formatEur } from "@/lib/utils";
@@ -608,159 +607,6 @@ function ImportAdmin() {
   );
 }
 
-function BehalfOrder() {
-  const { t } = useI18n();
-  const qc = useQueryClient();
-  const customers = useQuery({ queryKey: ["admin-customers"], queryFn: () => listCustomers() });
-  const products = useQuery({ queryKey: ["admin-products"], queryFn: () => adminListProducts() });
-  const approved = (customers.data ?? []).filter((c) => c.role === "customer" || c.role === "admin");
-  const [userId, setUserId] = useState("");
-  const [lines, setLines] = useState<{ sku: string; qty: string }[]>([{ sku: "", qty: "1" }]);
-  const [po, setPo] = useState("");
-  const [notes, setNotes] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [ship, setShip] = useState({
-    deliveryName: "",
-    deliveryAddress: "",
-    deliveryPostal: "",
-    deliveryCity: "",
-    deliveryCountry: "FI",
-  });
-
-  function pickCustomer(id: string) {
-    setUserId(id);
-    const c = approved.find((x) => x.userId === id);
-    if (!c) return;
-    setShip({
-      deliveryName: c.displayName || c.companyName,
-      deliveryAddress: c.addressLine,
-      deliveryPostal: c.postalCode,
-      deliveryCity: c.city,
-      deliveryCountry: c.country || "FI",
-    });
-  }
-
-  async function send() {
-    const clean = lines
-      .map((l) => ({ sku: l.sku.trim().toUpperCase(), qty: Math.round(Number(l.qty)) }))
-      .filter((l) => l.sku && l.qty > 0);
-    if (!userId || !clean.length) {
-      toast.message(t("auth.error"));
-      return;
-    }
-    setBusy(true);
-    try {
-      const res = await submitOrder({
-        data: {
-          onBehalfUserId: userId,
-          lines: clean,
-          poNumber: po,
-          notes,
-          reverseCharge: false,
-          ...ship,
-        },
-      });
-      toast.message(t("admin.behalfDone", { n: res.orderNo }));
-      setLines([{ sku: "", qty: "1" }]);
-      setPo("");
-      setNotes("");
-      void qc.invalidateQueries({ queryKey: ["admin-orders"] });
-    } catch (err) {
-      const msg =
-        err instanceof Error
-          ? err.message
-          : err && typeof err === "object" && "message" in err
-            ? String((err as { message: unknown }).message)
-            : t("auth.error");
-      toast.message(msg);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const known = new Map((products.data ?? []).map((p) => [p.sku.toUpperCase(), p]));
-
-  return (
-    <div className="mb-8 rounded-xl border border-line bg-surface p-4">
-      <h2 className="text-lg font-medium">{t("admin.behalfTitle")}</h2>
-      <p className="mt-1 max-w-2xl text-sm text-muted">{t("admin.behalfLead")}</p>
-      <div className="mt-4 grid gap-3 md:grid-cols-2">
-        <Field label={t("admin.behalfCustomer")}>
-          <select
-            className="h-11 w-full rounded-lg border border-line bg-paper px-3 text-sm"
-            value={userId}
-            onChange={(e) => pickCustomer(e.target.value)}
-          >
-            <option value="">—</option>
-            {approved.map((c) => (
-              <option key={c.userId} value={c.userId}>
-                {(c.companyName || c.displayName || c.email) + " · " + c.email}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label={t("checkout.po")}>
-          <Input value={po} onChange={(e) => setPo(e.target.value)} />
-        </Field>
-        <Field label={t("account.name")}>
-          <Input value={ship.deliveryName} onChange={(e) => setShip((s) => ({ ...s, deliveryName: e.target.value }))} />
-        </Field>
-        <Field label={t("account.address")}>
-          <Input value={ship.deliveryAddress} onChange={(e) => setShip((s) => ({ ...s, deliveryAddress: e.target.value }))} />
-        </Field>
-        <Field label={t("account.postal")}>
-          <Input value={ship.deliveryPostal} onChange={(e) => setShip((s) => ({ ...s, deliveryPostal: e.target.value }))} />
-        </Field>
-        <Field label={t("account.city")}>
-          <Input value={ship.deliveryCity} onChange={(e) => setShip((s) => ({ ...s, deliveryCity: e.target.value }))} />
-        </Field>
-      </div>
-      <div className="mt-4 space-y-2">
-        {lines.map((line, i) => {
-          const product = known.get(line.sku.trim().toUpperCase());
-          return (
-            <div key={i} className="grid grid-cols-[1fr_6rem] gap-2">
-              <Input
-                placeholder={t("admin.behalfSku")}
-                value={line.sku}
-                onChange={(e) =>
-                  setLines((rows) => rows.map((r, idx) => (idx === i ? { ...r, sku: e.target.value } : r)))
-                }
-              />
-              <Input
-                placeholder={t("admin.behalfQty")}
-                inputMode="numeric"
-                value={line.qty}
-                onChange={(e) =>
-                  setLines((rows) => rows.map((r, idx) => (idx === i ? { ...r, qty: e.target.value } : r)))
-                }
-              />
-              {product ? (
-                <p className="col-span-2 text-xs text-muted">
-                  {product.nameFi} · {product.netPrice.toFixed(2)} € · saldo {product.stock}
-                </p>
-              ) : null}
-            </div>
-          );
-        })}
-        <button
-          type="button"
-          className="text-sm underline"
-          onClick={() => setLines((rows) => [...rows, { sku: "", qty: "1" }])}
-        >
-          {t("admin.behalfAdd")}
-        </button>
-      </div>
-      <Field label={t("checkout.notes")}>
-        <Textarea className="mt-2" value={notes} onChange={(e) => setNotes(e.target.value)} />
-      </Field>
-      <Button className="mt-4" disabled={busy} onClick={() => void send()}>
-        {busy ? t("common.loading") : t("admin.behalfSubmit")}
-      </Button>
-    </div>
-  );
-}
-
 function OrdersAdmin() {
   const { t } = useI18n();
   const qc = useQueryClient();
@@ -768,7 +614,6 @@ function OrdersAdmin() {
   const orders = q.data ?? [];
   return (
     <div>
-      <BehalfOrder />
       <p className="mb-4 text-sm text-muted">{t("orders.adminLead")}</p>
       <OrderList
         orders={orders}

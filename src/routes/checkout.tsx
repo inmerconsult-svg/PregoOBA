@@ -9,7 +9,7 @@ import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { useMyProfile } from "@/lib/auth/use-profile";
 import { PendingNotice } from "./pending";
 import { listProducts } from "@/lib/server/catalog";
-import { ensureProfile, submitOrder, updateProfile } from "@/lib/server/commerce";
+import { ensureProfile, listCustomers, submitOrder, updateProfile } from "@/lib/server/commerce";
 import { productName } from "@/lib/catalog-helpers";
 import { formatEur } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
@@ -32,6 +32,7 @@ function CheckoutPage() {
   const [notes, setNotes] = useState("");
   const [reverse, setReverse] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [forUserId, setForUserId] = useState("");
   const [form, setForm] = useState({
     companyName: "",
     vatNumber: "",
@@ -44,6 +45,25 @@ function CheckoutPage() {
   });
   const [formReady, setFormReady] = useState(false);
   const userId = user?.id;
+  const isOwner = (user?.primaryEmail || "").trim().toLowerCase() === "barmanol@gmail.com";
+  const customersQ = useQuery({
+    queryKey: ["checkout-customers"],
+    queryFn: () => listCustomers(),
+    enabled: isOwner,
+  });
+
+  function fillFrom(p: Profile) {
+    setForm({
+      companyName: p.companyName,
+      vatNumber: p.vatNumber,
+      phone: p.phone,
+      deliveryName: p.displayName || p.companyName,
+      deliveryAddress: p.addressLine,
+      deliveryPostal: p.postalCode,
+      deliveryCity: p.city,
+      deliveryCountry: p.country || "FI",
+    });
+  }
 
   useEffect(() => {
     if (!userId || formReady) return;
@@ -52,6 +72,7 @@ function CheckoutPage() {
       (p) => {
         if (cancelled) return;
         setProfile(p);
+        setForUserId(p.userId);
         setForm({
           companyName: p.companyName,
           vatNumber: p.vatNumber,
@@ -106,20 +127,23 @@ function CheckoutPage() {
       return;
     }
     setBusy(true);
+    const behalf = isOwner && forUserId && forUserId !== userId;
     try {
-      await updateProfile({
-        data: {
-          displayName: profile?.displayName || user?.displayName || "",
-          companyName: form.companyName,
-          vatNumber: form.vatNumber,
-          phone: form.phone,
-          addressLine: form.deliveryAddress,
-          postalCode: form.deliveryPostal,
-          city: form.deliveryCity,
-          country: form.deliveryCountry,
-          language: lang,
-        },
-      });
+      if (!behalf) {
+        await updateProfile({
+          data: {
+            displayName: profile?.displayName || user?.displayName || "",
+            companyName: form.companyName,
+            vatNumber: form.vatNumber,
+            phone: form.phone,
+            addressLine: form.deliveryAddress,
+            postalCode: form.deliveryPostal,
+            city: form.deliveryCity,
+            country: form.deliveryCountry,
+            language: lang,
+          },
+        });
+      }
       const res = await submitOrder({
         data: {
           lines: rows.map((r) => ({ sku: r.sku, qty: r.qty })),
@@ -131,6 +155,10 @@ function CheckoutPage() {
           deliveryPostal: form.deliveryPostal,
           deliveryCity: form.deliveryCity,
           deliveryCountry: form.deliveryCountry,
+          companyName: form.companyName,
+          vatNumber: form.vatNumber,
+          phone: form.phone,
+          onBehalfUserId: behalf ? forUserId : undefined,
         },
       });
       clear();
@@ -157,6 +185,36 @@ function CheckoutPage() {
             </p>
           ) : (
             <div className="mt-8 space-y-4">
+              {isOwner ? (
+                <Field label={t("checkout.forCustomer")}>
+                  <select
+                    className="h-11 w-full rounded-lg border border-line bg-paper px-3 text-sm"
+                    value={forUserId || userId}
+                    onChange={(e) => {
+                      const id = e.target.value;
+                      setForUserId(id);
+                      if (id === userId && profile) fillFrom(profile);
+                      const picked = (customersQ.data ?? []).find((c) => c.userId === id);
+                      if (picked) fillFrom(picked);
+                    }}
+                  >
+                    <option value={userId}>
+                      {t("checkout.forSelf")}
+                      {profile?.companyName ? ` — ${profile.companyName}` : ""}
+                    </option>
+                    {(customersQ.data ?? [])
+                      .filter((c) => c.userId !== userId && c.role !== "pending")
+                      .map((c) => (
+                        <option key={c.userId} value={c.userId}>
+                          {(c.companyName || c.displayName || c.email) + (c.email ? ` · ${c.email}` : "")}
+                        </option>
+                      ))}
+                  </select>
+                  {forUserId && forUserId !== userId ? (
+                    <p className="mt-1 text-xs text-muted">{t("checkout.forLead")}</p>
+                  ) : null}
+                </Field>
+              ) : null}
               <Field label={t("account.company")}>
                 <Input required value={form.companyName} onChange={(e) => setForm((f) => ({ ...f, companyName: e.target.value }))} />
               </Field>
@@ -190,7 +248,7 @@ function CheckoutPage() {
                 <Input value={po} onChange={(e) => setPo(e.target.value)} />
               </Field>
               <Field label={t("checkout.notes")}>
-                <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} />
+                <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={4} />
               </Field>
               <label className="flex items-center gap-2 text-sm">
                 <input type="checkbox" checked={reverse} onChange={(e) => setReverse(e.target.checked)} />
